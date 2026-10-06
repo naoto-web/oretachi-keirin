@@ -23,11 +23,12 @@ var SALES = (function () {
   function load(ym) {
     st.loading = true; st.err = ''; draw();
     API.sales(ym).then(function (d) {
-      st.data[d.ym] = d; st.ym = d.ym; st.months = d.months; st.asof = d.asof;
+      st.data[d.ym] = d; st.ym = d.ym; st.months = d.months;
+      if (!d.nosales) st.asof = d.asof;   // 売上が無い月（10/6〜）で note の「◯日まで」を消さない
       // 配信者（scope=mine）＝GASが本人の行だけ返す。画面も本人の個人画面だけ（人選び・全員の表・全員の比較は出さない）
       st.mine = d.scope === 'mine';
       if (st.mine) st.who = d.me;
-      if (!d.ym) return;
+      if (!d.ym || d.nosales) return;      // 売上の無い月はシフトを読まない（出勤日数は売上の画面でしか使わない）
       // 出勤日数のためにその月のシフト（管理者は全月読める）。シートが無い月は失敗する＝売れた日で数える
       if (st.shift[d.ym] === undefined) {
         // 未公開の月（配信者には空のシフトが返る・10/1〜）は出勤に使わない＝売れた日で数える
@@ -74,7 +75,8 @@ var SALES = (function () {
 
   // ── 前月比（9/30 Naoto②）。途中までの月（9/18まで等）は、先月も同じ日までで比べる＝「先月同期比」 ──
   function prevYm(ym) { var ks = Object.keys(st.all || {}).sort(), i = ks.indexOf(ym); return i > 0 ? ks[i - 1] : ''; }
-  function partialDay(ym) { return st.asof && st.asof.slice(0, 7) === ym ? +st.asof.slice(8) : 0; }
+  // 10/6 月末までそろった月（9/30まで等）は途中の月にしない＝「先月比」
+  function partialDay(ym) { return st.asof && st.asof.slice(0, 7) === ym && +st.asof.slice(8) < u.daysIn(ym) ? +st.asof.slice(8) : 0; }
   function prevStats(who, ym) {
     var p = prevYm(ym);
     if (!p) return null;
@@ -174,7 +176,7 @@ var SALES = (function () {
 
   function head(d) {
     var months = (st.months || []).slice().reverse();
-    return '<div class="title-row"><h1 class="screen-title">実績</h1>' + (window.PRESENCE ? PRESENCE.seg() : '') + '<span class="title-aside">' + (st.loading ? '読み込み中…' : d && d.asof ? u.mdShort(d.asof) + 'までのnote' : '') +
+    return '<div class="title-row"><h1 class="screen-title">実績</h1>' + (window.PRESENCE ? PRESENCE.seg() : '') + '<span class="title-aside">' + (st.loading ? '読み込み中…' : d && d.asof ? u.mdShort(d.asof) + 'までのnote' : d && d.nosales && d.hitsAsof ? u.mdShort(d.hitsAsof) + 'までの予想' : '') +
       ' <button type="button" class="link-btn" id="s-reload">最新にする</button></span></div>' +
       '<div class="s-pick"><select id="s-ym" class="date-input" aria-label="月">' + months.map(function (m) {
         return '<option value="' + m.ym + '"' + (m.ym === st.ym ? ' selected' : '') + '>' + m.ym.slice(0, 4) + '年' + u.monthLabel(m.ym) + '</option>';
@@ -316,6 +318,49 @@ var SALES = (function () {
     });
   }
 
+  // 予想の成績（配信コンソールの予想・8/14〜）＝個人の画面と、売上がまだ無い月の画面（10/6）で使う
+  // 🔄10/1 Yの要望＝note回収率を足して2×2（上＝全部の予想／下＝note記事だけ）
+  // 🔄10/3 配信者の要望（共有タブ）＝間にライブ予想（noteでない予想）の段を足して3段（全部／ライブ／note）
+  function hitPrevYm(ym) {   // 予想データのある前の月（売上の有無と関係なく比べる・10/6）
+    var ks = Object.keys(st.hits || {}).filter(function (k) { return (st.hits[k] || []).length; }).sort(), i = ks.indexOf(ym);
+    return i > 0 ? ks[i - 1] : '';
+  }
+  function hitCards(who) {
+    var hs = st.all ? hitStats(st.ym, who) : null;
+    // 予想データが月の途中まで（例：9/29まで）なら、先月もその日までで比べる
+    var hPart = hs && hs.last < u.daysIn(st.ym);
+    var hp = hs && hitPrevYm(st.ym) ? hitStats(hitPrevYm(st.ym), who, hPart ? hs.last : undefined) : null;
+    var dlH = function (html) { return html ? '<small class="s-dl">' + (hPart ? '先月同期比' : '先月比') + ' ' + html + '</small>' : ''; };
+    return '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">予想の成績<small>配信コンソールの予想' + hitRangeLabel(st.ym) + '</small></div>' +
+      (hs ? '<div class="s-k"><small>的中率</small><b class="num">' + pct1(hs.rate) + '</b><small>' + hs.hit + '/' + hs.settled + 'レース</small>' + dlH(hp && delta(hs.rate, hp.rate, 'pt')) + '</div>' +
+        '<div class="s-k"><small>回収率</small><b class="num">' + pct1(hs.back) + '</b><small>回収 ' + yen(hs.ref) + '</small>' + dlH(hp && delta(hs.back, hp.back, 'pt')) + '</div>' +
+        '<div class="s-k"><small>ライブ予想の的中率</small><b class="num">' + pct1(hs.lRate) + '</b><small>' + hs.lHit + '/' + hs.lSettled + 'レース</small>' + dlH(hp && delta(hs.lRate, hp.lRate, 'pt')) + '</div>' +
+        '<div class="s-k"><small>ライブ予想の回収率</small><b class="num">' + pct1(hs.lBack) + '</b><small>回収 ' + yen(hs.lRef) + '</small>' + dlH(hp && delta(hs.lBack, hp.lBack, 'pt')) + '</div>' +
+        '<div class="s-k"><small>note記事の的中率</small><b class="num">' + pct1(hs.nRate) + '</b><small>' + hs.nHit + '/' + hs.nSettled + 'レース</small>' + dlH(hp && delta(hs.nRate, hp.nRate, 'pt')) + '</div>' +
+        '<div class="s-k"><small>note記事の回収率</small><b class="num">' + pct1(hs.nBack) + '</b><small>回収 ' + yen(hs.nRef) + '</small>' + dlH(hp && delta(hs.nBack, hp.nBack, 'pt')) + '</div>'
+        : '<p class="sub">' + (st.all ? 'この月の予想データはありません（8/14から）' : '読み込み中…') + '</p>') + '</div>' +
+      (hs ? kindTable(st.ym, who) + wakuTable(st.ym, who) : '');
+  }
+
+  // 🆕10/6 noteの売上がまだ無い月（Naoto「売上がまだ無い月も出す」）＝予想の成績だけ先に出す
+  //   noteの販売履歴は月2回（16日ごろ＝1〜15日分／翌月3日ごろ＝月末まで）取り込む
+  function nosalesView(d) {
+    var today = u.ymd(new Date());
+    var next = today.slice(0, 7) === st.ym && +today.slice(8) < 16 ? '16日ごろ（1〜15日分）' : '翌月3日ごろ';
+    var note = '<div class="card"><span class="pill dim" style="justify-self:start">note売上は取り込み前</span>' +
+      '<p>この月のnote売上はまだ入っていません。次の取り込みは' + next + 'です。先に予想の成績だけ出しています。</p></div>';
+    if (st.who) return note + hitCards(st.who);
+    var list = members().map(function (m) { return { m: m, h: st.all ? hitStats(st.ym, m.name) : null }; }).filter(function (x) { return x.h; });
+    return note + '<div class="card s-all"><div class="s-all-head"><span></span><span>的中率</span><span>回収率</span><span>ライブ</span><span>note</span></div>' +
+      (st.all ? (list.length ? list.map(function (x) {
+        return '<button type="button" class="s-all-row" data-swho="' + u.esc(x.m.name) + '">' +
+          '<span class="wa-who" style="--mc:' + colorOf(x.m.name) + '">' + u.esc(x.m.name) + '</span>' +
+          '<span class="num">' + pct1(x.h.rate) + '<small class="s-dl">' + x.h.hit + '/' + x.h.settled + '</small></span><span class="num">' + pct1(x.h.back) + '</span>' +
+          '<span class="num">' + pct1(x.h.lBack) + '</span><span class="num">' + pct1(x.h.nBack) + '</span></button>';
+      }).join('') : '<p class="sub">この月の予想データはまだありません</p>') : '<p class="sub">読み込み中…</p>') +
+      '<p class="fresh s-note">配信コンソールの予想' + hitRangeLabel(st.ym) + '。ライブ・note＝それぞれの回収率。押すとその人の区分別の成績</p></div>';
+  }
+
   // 個人＝数字のまとめ＋昼・夜・グレード＋記事ごと（1日が上・その日の中はモ→デ→ナ→ミ）
   function oneView(d, shift, who) {
     var s = stats(d.rows, who, shift, st.ym);
@@ -329,11 +374,6 @@ var SALES = (function () {
     };
     var p = st.all ? prevStats(who, st.ym) : null;
     var dl = function (html) { return html ? '<small class="s-dl">' + deltaLabel(st.ym) + ' ' + html + '</small>' : ''; };
-    var hs = st.all ? hitStats(st.ym, who) : null;
-    // 予想データが月の途中まで（例：9/29まで）なら、先月もその日までで比べる
-    var hPart = hs && hs.last < u.daysIn(st.ym);
-    var hp = hs && prevYm(st.ym) ? hitStats(prevYm(st.ym), who, hPart ? hs.last : undefined) : null;
-    var dlH = function (html) { return html ? '<small class="s-dl">' + (hPart ? '先月同期比' : '先月比') + ' ' + html + '</small>' : ''; };
     var b = st.all ? buyerOf(who, st.ym) : null, bp = b && prevYm(st.ym) ? buyerOf(who, prevYm(st.ym)) : null;
     var firstMonth = Object.keys(st.all || {}).sort()[0] === st.ym;
     // 購入者の前月比（9/30 Naoto「新規・リピート・ヘビーも前月比」）。月単位でしか数えていないので、途中までの月は比べない。
@@ -349,18 +389,7 @@ var SALES = (function () {
       // 🔄10/1 Yの要望「1記事あたりの売上」＝売上（チップ込み）÷売れた記事の本数（0件の記事は明細に無い＝確認した範囲では出した記事とほぼ同じ）
       '<div class="s-k"><small>記事</small><b class="num">' + u.yen(s.arts) + '本</b><small>' + u.yen(s.n) + '件売れた</small>' + dl(p && delta(s.arts, p.arts, 'pct')) + '</div>' +
       '<div class="s-k"><small>1記事あたり</small><b class="num">' + per(s.total, s.arts) + '</b><small>' + (s.arts ? (s.n / s.arts).toFixed(1) + '件/本' : '') + '</small>' + dl(p && s.arts && p.arts && delta(s.total / s.arts, p.total / p.arts, 'pct')) + '</div></div>' +
-      // 予想の成績（配信コンソールの予想・8/14〜）
-      // 🔄10/1 Yの要望＝note回収率を足して2×2（上＝全部の予想／下＝note記事だけ）
-      // 🔄10/3 配信者の要望（共有タブ）＝間にライブ予想（noteでない予想）の段を足して3段（全部／ライブ／note）
-      '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">予想の成績<small>配信コンソールの予想' + hitRangeLabel(st.ym) + '</small></div>' +
-      (hs ? '<div class="s-k"><small>的中率</small><b class="num">' + pct1(hs.rate) + '</b><small>' + hs.hit + '/' + hs.settled + 'レース</small>' + dlH(hp && delta(hs.rate, hp.rate, 'pt')) + '</div>' +
-        '<div class="s-k"><small>回収率</small><b class="num">' + pct1(hs.back) + '</b><small>回収 ' + yen(hs.ref) + '</small>' + dlH(hp && delta(hs.back, hp.back, 'pt')) + '</div>' +
-        '<div class="s-k"><small>ライブ予想の的中率</small><b class="num">' + pct1(hs.lRate) + '</b><small>' + hs.lHit + '/' + hs.lSettled + 'レース</small>' + dlH(hp && delta(hs.lRate, hp.lRate, 'pt')) + '</div>' +
-        '<div class="s-k"><small>ライブ予想の回収率</small><b class="num">' + pct1(hs.lBack) + '</b><small>回収 ' + yen(hs.lRef) + '</small>' + dlH(hp && delta(hs.lBack, hp.lBack, 'pt')) + '</div>' +
-        '<div class="s-k"><small>note記事の的中率</small><b class="num">' + pct1(hs.nRate) + '</b><small>' + hs.nHit + '/' + hs.nSettled + 'レース</small>' + dlH(hp && delta(hs.nRate, hp.nRate, 'pt')) + '</div>' +
-        '<div class="s-k"><small>note記事の回収率</small><b class="num">' + pct1(hs.nBack) + '</b><small>回収 ' + yen(hs.nRef) + '</small>' + dlH(hp && delta(hs.nBack, hp.nBack, 'pt')) + '</div>'
-        : '<p class="sub">' + (st.all ? 'この月の予想データはありません（8/14から）' : '読み込み中…') + '</p>') + '</div>' +
-      (hs ? kindTable(st.ym, who) + wakuTable(st.ym, who) : '') +
+      hitCards(who) +
       // 購入者数（配信者には本人分だけ）
       (st.all ? '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">買ってくれた人<small>人数だけ（名前は持っていません）</small></div>' +
         (b ? '<div class="s-k"><small>購入者</small><b class="num">' + u.yen(b[2]) + '人</b><small>この月に買った人</small>' + (partialDay(st.ym) ? '<small>' + u.mdShort(st.asof) + 'まで</small>' : dl(bp && delta(b[2], bp[2], 'pct'))) + '</div>' +
@@ -408,6 +437,12 @@ var SALES = (function () {
     if (!d) {
       el.innerHTML = head(null) + '<p class="sub">' + (st.err ? 'つながりませんでした。「最新にする」を押してください' : '読み込んでいます…') + '</p>';
       bind(el); return;
+    }
+    if (d.nosales) {
+      el.innerHTML = head(d) + nosalesView(d);
+      bind(el);
+      if (!st.all && !st.allErr) loadAll();
+      return;
     }
     var shift = st.shift[st.ym];
     // 注記。配信者には収支表（Yの集計）の話を出さない
