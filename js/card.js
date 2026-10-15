@@ -2,16 +2,19 @@
    ・入口＝シフトの日付の詳細にある場のボタン（data-date・data-venue）。シフトの上にかぶせる全画面のシート（戻る＝閉じる）
    ・中身＝OBS①と同じ項目（ライン順・脚質・得点・B/H/S・勝率）＋3連単オッズ（人気順）＋結果・払戻
    ・データ＝GASの app=card／app=odds（card.gs が keirin.jp の公式データを取る）。出せるのは keirin.jp にある今日・明日の分だけ
-   ・得点・B・H・S＝レース内の1位赤・2位青（同じ数字は同じ色・0と空は数えない＝OBSの出走表と同じ決まり） */
+   ・得点・B・H・S＝レース内の1位赤・2位青（同じ数字は同じ色・0と空は数えない＝OBSの出走表と同じ決まり）
+   ・🆕10/16 選手DB統合＝出走表はこれ1つ（選手タブの「出走表」からもここが開く）。選手タブを見てよい人には
+     選手名がボタン＝押すとその選手の詳細（riders.js）。役割・ライン車数・戦法はこのレースの並びから渡す */
 var CARD = (function () {
   var u = window.OKL.u;
-  var st = { date: '', place: '', data: null, race: 0, odds: {}, oddsBusy: {}, loading: false, err: '', open: false };
+  var st = { date: '', place: '', data: null, race: 0, odds: {}, oddsBusy: {}, loading: false, err: '', open: false, back: '' };
   var KUBUN = { '8': ['モーニング', 'kc-morning'], '1': ['デイ', 'kc-day'], '3': ['ナイター', 'kc-night'], '5': ['ミッド', 'kc-mid'] };
   // 車番の色（競輪の決まりの色）＝[地, 字]
   var CAR = { 1: ['#ffffff', '#23252a'], 2: ['#23252a', '#ffffff'], 3: ['#d62d2d', '#ffffff'], 4: ['#2553c8', '#ffffff'], 5: ['#f2d21b', '#23252a'],
               6: ['#1f8a3b', '#ffffff'], 7: ['#f08a1c', '#ffffff'], 8: ['#f2a1c2', '#23252a'], 9: ['#7c3fb5', '#ffffff'] };
   var ROLE = ['先頭', '番手', '3番手', '4番手', '5番手'];
 
+  function canRiders() { try { return !!(window.RIDERS && window.APP && RIDERS.can(APP.me())); } catch (e) { return false; } }
   function car(n, cls) { var c = CAR[n] || ['#ddd', '#23252a']; return '<span class="rc-car' + (cls ? ' ' + cls : '') + '" style="background:' + c[0] + ';color:' + c[1] + '">' + n + '</span>'; }
   function oddsTxt(v) { return v >= 100 ? u.yen(Math.round(v)) : v.toFixed(1); }
   function hm(iso) { var d = new Date(iso); return u.pad(d.getHours()) + ':' + u.pad(d.getMinutes()); }
@@ -28,7 +31,8 @@ var CARD = (function () {
     return el;
   }
   // スマホの「戻る」で閉じる＝開くときに履歴を1つ積む
-  window.addEventListener('popstate', function () { if (st.open) hide(); });
+  //   🆕10/16 上に選手の詳細を重ねて戻ってきた（履歴が出走表の段に戻っただけ）ときは閉じない
+  window.addEventListener('popstate', function () { if (st.open && !(history.state && history.state.okcard)) hide(); });
   function hide() {
     st.open = false;
     sheet().hidden = true;
@@ -36,8 +40,10 @@ var CARD = (function () {
   }
   function close() { if (history.state && history.state.okcard) history.back(); else hide(); }
 
-  function open(date, place) {
+  // opts.back＝左上の戻るの文言（既定「‹ シフト」・選手タブからは「‹ 選手」）
+  function open(date, place, opts) {
     st.date = date; st.place = place; st.data = null; st.race = 0; st.odds = {}; st.oddsBusy = {}; st.err = '';
+    st.back = (opts && opts.back) || '‹ シフト';
     st.open = true;
     try { history.pushState({ okcard: 1 }, ''); } catch (e) { /* 積めない端末は×で閉じる */ }
     var el = sheet();
@@ -83,7 +89,7 @@ var CARD = (function () {
   // ── 描画 ──
   function head() {
     var d = st.data, v = d && d.venue, k = v && KUBUN[v.kubun];
-    return '<div class="rc-top"><button type="button" class="rc-back" id="rc-close" aria-label="シフトに戻る">‹ シフト</button>' +
+    return '<div class="rc-top"><button type="button" class="rc-back" id="rc-close" aria-label="戻る">' + u.esc(st.back || '‹ シフト') + '</button>' +
       '<div class="rc-title"><b>' + u.esc(st.place) + '</b>' +
       (v ? (v.grade ? '<span class="rc-grade' + (/^G|^GP/.test(v.grade) ? ' is-g' : '') + '">' + u.esc(v.grade) + '</span>' : '') +
         (k ? '<span class="kb rc-kb ' + k[1] + '">' + k[0] + '</span>' : '') + (v.nichiji ? '<span class="rc-nichi">' + u.esc(v.nichiji) + '</span>' : '') : '') +
@@ -146,11 +152,16 @@ var CARD = (function () {
     var rs = r.racers;
     var rkS = ranker(rs.map(function (x) { return x.score; }));
     var rkB = ranker(rs.map(function (x) { return x.st[4]; })), rkH = ranker(rs.map(function (x) { return x.st[5]; })), rkSt = ranker(rs.map(function (x) { return x.st[6]; }));
+    var link = canRiders();
     return ordered(r).map(function (g) {
       return '<div class="rc-grp">' + (g.label ? '<div class="rc-grp-cap">' + g.label + '</div>' : '') + g.racers.map(function (o) {
         var x = o.x, s = x.st || [];
+        // 選手タブを見てよい人＝名前がボタン（登録番号がある行だけ・古い控えの出走表には無い）
+        var nm = link && x.reg
+          ? '<button type="button" class="rc-name rc-name-link" data-reg="' + u.esc(x.reg) + '" data-car="' + x.no + '">' + u.esc(x.name) + '</button>'
+          : '<b class="rc-name">' + u.esc(x.name) + '</b>';
         return '<div class="rc-row">' + car(x.no) +
-          '<div class="rc-main"><div class="rc-l1"><b class="rc-name">' + u.esc(x.name) + '</b>' +
+          '<div class="rc-main"><div class="rc-l1">' + nm +
             (x.h ? '<small class="rc-hj">' + u.esc(x.h) + '</small>' : '') +
             (o.role ? '<small class="rc-role' + (o.seri ? ' is-seri' : '') + '">' + (o.seri ? '競り' : o.role) + '</small>' : '') +
             '<span class="rc-kyaku">' + u.esc(x.kyaku || '') + '</span>' +
@@ -211,6 +222,18 @@ var CARD = (function () {
     if (or) or.addEventListener('click', function () { loadOdds(st.race, true); });
     el.querySelectorAll('[data-race]').forEach(function (b) {
       b.addEventListener('click', function () { st.race = +b.dataset.race; draw(); loadOdds(st.race); });
+    });
+    // 🆕10/16 選手名→選手の詳細（riders.js）。今日の役割・ライン車数・戦法の材料にこのレースの並びを渡す
+    el.querySelectorAll('[data-reg]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var r = raceOf(st.race), v = st.data && st.data.venue;
+        if (!r || !window.RIDERS) return;
+        var x = r.racers.filter(function (y) { return String(y.no) === b.dataset.car; })[0] || {};
+        RIDERS.openDetail(
+          { reg: b.dataset.reg, jo: st.place, date: st.date, raceNo: r.no, cls: r.cls || '', grade: (v && v.grade) || '',
+            lines: r.lines || [], lineType: r.lineType || '', car: +b.dataset.car },
+          { name: x.name, kyuhan: x.cls, pref: x.pref, term: x.term, age: x.age, kyaku: x.kyaku, score: x.score });
+      });
     });
     // 選んでいるレースの札が見えるように横スクロールを合わせる
     var sel = el.querySelector('.rc-rb.is-sel'), box = el.querySelector('#rc-races');
