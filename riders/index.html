@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>選手</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<!-- 🔄2026-10-16 選手DBをアプリへ統合（段1＝見るだけ）。アプリの「選手」タブが iframe でこのページを開く（js/riders.js）。
+     🔴このリポジトリは公開。人名・鍵をコードに書かない（名前は選手DBのGASから受け取る）。
+     css/ と js/ は下の読み込み係が版の番号つきで読む（アプリの index.html と同じ・version.json はアプリと共通） -->
+<style>html:not(.ready) body { visibility: hidden; }</style>
+</head>
+<body data-view="work" data-theme="light">
+
+<div class="app" id="app" data-tab="list">
+
+  <header class="topbar">
+    <nav class="tabs">
+      <button type="button" class="tab is-on" data-tab="list">選手一覧</button>
+      <button type="button" class="tab" data-tab="today">出走表</button>
+    </nav>
+  </header>
+
+  <main class="cols">
+
+    <section class="col-left">
+
+      <div class="pane" id="pane-list">
+        <div class="filters">
+          <input type="search" id="q" placeholder="名前・カナ・登録番号でさがす" autocomplete="off" spellcheck="false">
+          <select id="kyuhan-sel" class="sel" title="級班でしぼりこむ">
+            <option value="all">すべての級班</option>
+          </select>
+        </div>
+        <div class="kana-rows" id="kana-rows"></div>
+        <div class="list-head"><span id="list-count">—</span></div>
+        <div class="list" id="rider-list"></div>
+      </div>
+
+      <div class="pane is-hidden" id="pane-today">
+        <div class="filters">
+          <span class="muted sm">本日・明日の開催</span>
+          <button type="button" class="btn btn-sm" id="card-reload">取り直す</button>
+        </div>
+        <div class="racecard" id="racecard"></div>
+      </div>
+
+    </section>
+
+    <section class="col-right">
+      <div class="m-bar">
+        <button type="button" class="m-back" id="m-back">← 一覧へ</button>
+      </div>
+      <div id="detail">
+        <div class="empty">選手を選んでください。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  var CSS = ['css/style.css'];
+  var JS = ['js/config.js', 'js/racetype.js', 'js/bank.js', 'js/api.js', 'js/kana.js', 'js/list.js', 'js/today.js', 'js/detail.js', 'js/main.js'];
+  var shown = false;
+  function show() { if (!shown) { shown = true; document.documentElement.classList.add('ready'); } }
+  setTimeout(show, 3000);
+  function load(v) {
+    CSS.forEach(function (f) {
+      var l = document.createElement('link');
+      l.rel = 'stylesheet'; l.href = f + '?v=' + v;
+      l.onload = show; l.onerror = show;
+      document.head.appendChild(l);
+    });
+    JS.forEach(function (f) {
+      var s = document.createElement('script');
+      s.src = f + '?v=' + v; s.async = false;
+      document.body.appendChild(s);
+    });
+  }
+  fetch('../version.json?cb=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (j) { load(j.v); })
+    .catch(function () { load(Date.now()); });
+})();
+</script>
+</body>
+</html>
