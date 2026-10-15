@@ -10,18 +10,26 @@ var APP = (function () {
     shift: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
     wish: '<path d="M4 20V5a1 1 0 0 1 1-1h11l4 4v12z"/><path d="M8 13l3 3 5-6"/>',
     stats: '<path d="M4 20h16"/><path d="M7 16v-5M12 16V7M17 16v-8"/>',
+    riders: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>',
     share: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'
   };
   var TABS = [
     { id: 'home', label: 'ホーム', soon: '次の出番・休み希望の締切・自分の数字をここにまとめます。' },
     { id: 'shift', label: 'シフト' },
+    { id: 'riders', label: '選手' },   // 🆕10/16 選手DBを統合（riders.js・riders/）＝GASの me.riders が真の人だけ
     // 🔄10/1 休み希望タブはやめた（Naoto）＝配信者はシフトのカレンダーの日付から出す／管理者はシフトの［休み希望］から一覧（wishadmin.js）
     { id: 'stats', label: '実績', soon: '自分のnote売上と的中率・回収率を見られるようになります（本人の分だけ）。' },
     { id: 'share', label: '共有' }   // 10/1 Yの要望＝相談・提案と回答・決定事項・プログラマーへの要望（share.js）
   ];
 
   // 🔄10/1 Naoto「共有は今は管理者だけ」＝GASの me.share が真のときだけ共有タブを出す（配信者に開けるのはGASのスイッチ）
-  function tabs() { return TABS.filter(function (t) { return t.id !== 'share' || (me && me.share); }); }
+  function tabs() {
+    return TABS.filter(function (t) {
+      if (t.id === 'share') return !!(me && me.share);
+      if (t.id === 'riders') return !!(window.RIDERS && RIDERS.can(me));
+      return true;
+    });
+  }
   function renderTabs() {
     if (!tabs().some(function (t) { return t.id === tab; })) tab = 'shift';
     document.getElementById('tabs').innerHTML = '<div class="tabs-inner">' + tabs().map(function (t) {
@@ -36,6 +44,8 @@ var APP = (function () {
     renderTabs();
     var t = TABS.filter(function (x) { return x.id === tab; })[0];
     var view = document.getElementById('view');
+    // 選手タブ＝iframe（riders.js）を #view の外に重ねる。ほかのタブでは隠すだけ（読み直さない）
+    if (window.RIDERS) { if (t.id === 'riders') { view.innerHTML = ''; RIDERS.show(); return; } RIDERS.hide(); }
     if (t.id === 'shift') { SHIFT.render(); return; }
     // ホーム＝🆕10/2 収支発表（投稿用）のカード（pl.js）＋🆕10/1 通知のカード（push.js）＋準備中の案内
     if (t.id === 'home') {
@@ -123,11 +133,13 @@ var APP = (function () {
     API.me().then(function (m) {
       try { localStorage.setItem(ME_LS, JSON.stringify(m)); } catch (e) { /* 控えられなくても動く */ }
       if (!me) { start(m); return; }
-      var hadShare = !!(me && me.share);
+      var hadShare = !!(me && me.share), hadRiders = !!(me && me.riders);
       me = m;                 // 控えで出していた＝名前の札とメンバー（色・並び・上限）だけ差し替える
       renderWho(m);
       // 共有タブの出し分けが変わった（控えが古い・スイッチが切り替わった）ときだけタブを作り直す
       if (hadShare !== !!m.share) { if (m.share) SHARE.init(); if (tab === 'share' && !m.share) render(); else renderTabs(); }
+      // 選手タブも同じ（🆕10/16）
+      else if (hadRiders !== !!m.riders) { if (tab === 'riders' && !m.riders) render(); else renderTabs(); }
       SHIFT.setMe(m);
     }).catch(function (e) {
       if (me && e.code !== 'key' && e.code !== 'as') return;  // 控えで動いている間の通信の失敗は黙って続ける
