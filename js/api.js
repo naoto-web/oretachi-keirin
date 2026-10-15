@@ -71,6 +71,7 @@ var API = (function () {
     presence: function (ym) { return get('presence', { ym: ym }); },   // 実績タブの出演（管理者だけ・presence.js・10/1）
     card: function (date, place) { return get('card', { date: date, place: place }); },             // 出走表（card.js）
     odds: function (date, place, race) { return get('odds', { date: date, place: place, race: race }); },  // 3連単オッズ（card.js）
+    cardList: function () { return get('cardlist'); },   // 選手タブの「出走表」に並べる本日・明日の開催（riders/・10/16）
     publish: function (ym, on) { return post('publish', { ym: ym, on: on }); },
     // 共有タブ（share.js・10/1）。書き込みには as を付ける＝プレビュー中はGASが断る
     share: function () { return get('share'); },
