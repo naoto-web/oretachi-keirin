@@ -1,0 +1,846 @@
+/* ===========================================================
+   style.css — 選手DB（PC用・事務所の入力画面）
+   出力ビュー（?view=output）だけは背景透明・OBS向けの別スタイル（末尾）
+   =========================================================== */
+
+/* ══════════ 配色 ══════════
+   🔑**色は必ずここの変数を通す**（2026-09-23）。黒背景／白背景をボタン1つで切り替えるため、
+      CSSの中に生の色を書くと片方の配色で必ず破綻する。
+   ⚠️白背景は `body[data-view="work"][data-theme="light"]` にだけ効かせる
+      ＝**出力ビュー（OBSブラウザソース）には絶対にかけない**（配信画面の見た目が変わるため）。 */
+:root {
+  --bg: #12161c;
+  --panel: #1a2029;
+  --panel2: #222a35;
+  --line: #333d4b;
+  --fg: #e8edf4;
+  --fg-dim: #97a3b4;
+  --accent: #4da3ff;
+  --gold: #e8b53a;
+  --ok: #3ec98a;
+  --ng: #ef5f5f;
+
+  --on-accent: #06121f;                 /* アクセント色の上に載せる文字 */
+  --on-key: #ffffff;                    /* 青地の上に載せる「今日の役割」の白太字（§50） */
+  --fg-strong: #cfd8e3;                 /* 本文よりわずかに強い数字（内訳の回数） */
+  --role-fg: #a9cdf5;                   /* 役割の青（出走表の右端・タグ） */
+  --fill-soft: rgba(255, 255, 255, .03);   /* 表の地 */
+  --fill-soft2: rgba(255, 255, 255, .035); /* メモ欄の地 */
+  --cur-bg: rgba(77, 163, 255, .16);       /* いま選んでいる行 */
+  --cur-bg-hover: rgba(77, 163, 255, .22);
+  --car-ring: rgba(255, 255, 255, .22);    /* 車番の丸のふち（1番＝白が地に溶けないように） */
+  --seri-bg: rgba(232, 181, 58, .14);
+  --seri-line: rgba(232, 181, 58, .45);
+  --tag-role-bg: #2b3a4d;  --tag-role-fg: #a9cdf5;  --tag-role-line: #3a5170;
+  --tag-new-bg: #163a2a;   --tag-new-fg: #6fe0a8;   --tag-new-line: #245c42;
+  --tag-down-bg: #3a2416;  --tag-down-fg: #f0b183;  --tag-down-line: #5c3a24;
+  --tag-stay-bg: #232a35;
+  --badge-obs-bg: #1d3550; --badge-obs-fg: #93c5fd;
+  --badge-memo-bg: #2d2a16; --badge-memo-fg: #e6d07a;
+  --badge-wait-bg: #2a2a2a; --badge-wait-fg: #9a9a9a;
+  --on-bg: #16543a;        --on-fg: #aef0cd;        /* 「配信OK」が押された状態 */
+  --toast-bg: #0c1017;     --toast-fg: #e8edf4;     --toast-err-fg: #ffd7d7;
+  /* 出走表の「0」の文字。🔴opacityで薄くしてはいけない（下の .n.is-zero の説明） */
+  --fg-faint: #565d66;
+}
+
+/* 🔴`input type="date"` のカレンダーアイコンとカレンダー本体は**ブラウザが描くので色を直接いじれない**。
+   これが無いと、暗い背景に黒いアイコンが載って見えなくなる（2026-09-23 観察ログの開催日）。
+   ⚠️**`:root` ではなく work ビューに書く**＝出力ビュー（OBS）には絶対に効かせない（§27と同じ約束）。
+      `color-scheme` はブラウザのキャンバス色を変える指定なので、「背景は完全透明」が命の配信画面には触れない。
+   🔑`color-scheme` は継承されるので、body に置けば中の入力欄まで届く。 */
+body[data-view="work"] { color-scheme: dark; }
+
+/* ── 白背景（2026-09-23 Naoto「一応見て、すぐ元に戻せるように」）──
+   画面右上のボタンで切り替え・このブラウザだけが覚える。既定は黒のまま。
+   🔑金（得点）と緑・赤は**白地だと飛ぶので濃く**する。明度だけ入れ替えると読めなくなる。 */
+body[data-view="work"][data-theme="light"] {
+  --bg: #f2f4f7;
+  --panel: #ffffff;
+  --panel2: #eef1f5;
+  --line: #ccd3dc;
+  --fg: #1b2028;
+  --fg-dim: #5a6472;
+  --accent: #1668cc;
+  --gold: #91630a;
+  --ok: #147a45;
+  --ng: #c12f26;
+
+  --on-accent: #ffffff;
+  --on-key: #ffffff;
+  --fg-strong: #2a323d;
+  --role-fg: #1b5fa8;
+  --fill-soft: rgba(0, 0, 0, .035);
+  --fill-soft2: rgba(0, 0, 0, .045);
+  --cur-bg: rgba(22, 104, 204, .12);
+  --cur-bg-hover: rgba(22, 104, 204, .18);
+  --car-ring: rgba(0, 0, 0, .28);
+  --seri-bg: rgba(200, 140, 10, .16);
+  --seri-line: rgba(150, 103, 8, .6);
+  --tag-role-bg: #e3edfa;  --tag-role-fg: #1b5fa8;  --tag-role-line: #b9d3f0;
+  --tag-new-bg: #e0f5ea;   --tag-new-fg: #12724a;   --tag-new-line: #b2e0c8;
+  --tag-down-bg: #fceadb;  --tag-down-fg: #8d4b14;  --tag-down-line: #efcaa8;
+  --tag-stay-bg: #eceff3;
+  --badge-obs-bg: #e1ecfb; --badge-obs-fg: #1a5aa8;
+  --badge-memo-bg: #f7efcf; --badge-memo-fg: #74600f;
+  --badge-wait-bg: #ebedf0; --badge-wait-fg: #6b7280;
+  --on-bg: #dcf3e6;        --on-fg: #12643f;
+  /* トーストは白地でも浮くよう濃いまま＝色を反転させない */
+  --toast-bg: #2b3341;     --toast-fg: #ffffff;     --toast-err-fg: #ffd7d7;
+  --fg-faint: #bbbcbf;
+
+  /* カレンダーのアイコンと日付ピッカーも白地用に。⚠️ここ（work＋light）にだけ書く
+     ＝出力ビュー（OBS）は :root の dark のまま */
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  font-size: 14px;
+}
+
+button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+
+.is-hidden { display: none !important; }
+.muted { color: var(--fg-dim); }
+.sm { font-size: 12px; }
+
+/* ── 全体の骨格 ── */
+.app { display: flex; flex-direction: column; height: 100%; }
+
+/* 🔴上のバーは **時計・電池の下に潜らせない**（2026-09-23 Yの実機＝時計と「選手一覧」が重なっていた）。
+   iPhoneのホーム画面アプリは `viewport-fit=cover` で画面の端まで広がるので、
+   `env(safe-area-inset-top)` の分だけ上に余白を足し、その分だけバーの高さも伸ばす。
+   🔑**画面幅で分岐しない**＝ノッチの無い端末・PC・OBSでは `env()` が 0 になるので1pxも変わらない
+     （§38で決めた「CSSを変えてもJSが黙ってずれない」考え方と同じ）。
+   🔑`flex-basis` は **auto** にする＝列方向のflexでは basis が高さより優先されるので、
+     `0 0 48px` のままだと `height` の calc が効かない。
+   ⚠️横向きの左右インセットは足していない＝横向きは幅700px超でPCの2カラムに戻る（取説§9）。 */
+.topbar {
+  display: flex; align-items: center; gap: 18px;
+  padding: env(safe-area-inset-top, 0px) 16px 0;
+  height: calc(48px + env(safe-area-inset-top, 0px)); flex: 0 0 auto;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 700; font-size: 17px; letter-spacing: .04em; }
+.tabs { display: flex; gap: 4px; }
+.tab {
+  background: transparent; border: 1px solid transparent; color: var(--fg-dim);
+  padding: 6px 14px; border-radius: 7px; cursor: pointer;
+}
+.tab:hover { color: var(--fg); }
+.tab.is-on { background: var(--panel2); border-color: var(--line); color: var(--fg); font-weight: 600; }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.theme-btn { white-space: nowrap; font-size: 12px; padding: 4px 10px; color: var(--fg-dim); }
+.theme-btn:hover { color: var(--fg); }
+.conn { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--panel2); white-space: nowrap; }
+.conn[data-ok="ok"] { color: var(--ok); }
+/* 🔴つながらないときは**押せる**＝キーを入れ直す唯一の入口（§39）。
+   ⚠️文言は必ず短く＝長い文（旧「APIキーがありません（URLに ?k=… を付けて開く）」）は
+      360pxで2行に折り返し、バーの高さを壊してタブまで潰した（Yの実機スクショ）。 */
+.conn[data-ok="ng"] { color: var(--ng); cursor: pointer; border: 1px solid var(--ng); }
+
+.cols { display: flex; flex: 1 1 auto; min-height: 0; }
+.col-left { width: 460px; flex: 0 0 460px; border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+/* 出走表タブは直近4ヶ月成績まで10列出すので、そのときだけ左を広げる（選手一覧は460pxのまま）。
+   🔑幅は「固定列の合計＋選手名に必要な分＋スクロールバー」で決める（9/23 Naoto「名前の右の空白を詰めて
+   右の詳細を広げたい」）。712px だと余りが全部 .racer-name の 1fr に流れて名前の右に約90pxの空白ができていた。 */
+.app[data-tab="today"] .col-left { width: 640px; flex: 0 0 640px; }
+.col-right { flex: 1 1 auto; overflow-y: auto; padding: 16px 20px 60px; min-width: 0; }
+.pane { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+
+/* ── しぼりこみ ── */
+.filters { display: flex; gap: 8px; padding: 10px 12px; align-items: center; flex-wrap: wrap; }
+.filters input[type="search"] { flex: 1 1 auto; min-width: 140px; }
+input[type="search"], .inp, .sel, .ta, .role-note {
+  background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
+  border-radius: 7px; padding: 7px 10px;
+}
+.inp-sm { width: 90px; }
+.inp-xs { width: 62px; }
+/* 観察ログの「場」と「開催日」（2026-09-23 Naoto）。
+   ⚠️type=date は中に「2026/09/23」＋カレンダーのボタンが入るので、90pxだと日付が切れる */
+.sel-sm { width: 112px; }
+.ta { width: 100%; resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.kana-rows { display: flex; gap: 4px; padding: 0 12px 10px; flex-wrap: wrap; }
+.kana {
+  background: var(--panel2); border: 1px solid var(--line); color: var(--fg-dim);
+  min-width: 34px; padding: 5px 8px; border-radius: 6px; cursor: pointer;
+}
+.kana:hover { color: var(--fg); }
+.kana.is-on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+
+.list-head { padding: 0 14px 6px; font-size: 12px; color: var(--fg-dim); }
+
+/* ── 選手一覧 ── */
+.list { overflow-y: auto; flex: 1 1 auto; padding: 0 8px 20px; }
+.rrow {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  padding: 8px 10px; margin-bottom: 2px;
+}
+.rrow:hover { background: var(--panel); }
+.rrow.is-current { background: var(--panel2); border-color: var(--accent); }
+.rrow-main { display: flex; align-items: baseline; gap: 10px; }
+.rname { font-size: 15px; font-weight: 600; }
+.rkana { font-size: 11px; color: var(--fg-dim); }
+.rrow-sub { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
+.rrow-marks { display: flex; gap: 5px; margin-top: 4px; }
+
+.tag {
+  font-size: 11px; padding: 2px 7px; border-radius: 5px;
+  background: var(--panel2); color: var(--fg-dim); border: 1px solid var(--line);
+}
+.tag-kyuhan { color: var(--fg); font-weight: 600; }
+.tag-score { color: var(--gold); font-variant-numeric: tabular-nums; }
+.tag-reg { font-variant-numeric: tabular-nums; }
+.tag-role { background: var(--tag-role-bg); color: var(--tag-role-fg); border-color: var(--tag-role-line); }
+.tag-new { background: var(--tag-new-bg); color: var(--tag-new-fg); border-color: var(--tag-new-line); }
+.tag-down { background: var(--tag-down-bg); color: var(--tag-down-fg); border-color: var(--tag-down-line); }
+.tag-stay { background: var(--tag-stay-bg); color: var(--fg-dim); }
+
+.badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+.badge-obs { background: var(--badge-obs-bg); color: var(--badge-obs-fg); }
+.badge-memo { background: var(--badge-memo-bg); color: var(--badge-memo-fg); }
+.badge-wait { background: var(--badge-wait-bg); color: var(--badge-wait-fg); }
+
+.empty { padding: 28px 16px; color: var(--fg-dim); text-align: center; }
+
+/* ── 本日の出走表 ── */
+.venue-tabs { display: flex; gap: 4px; padding: 0 12px 8px; flex-wrap: wrap; }
+.vtab {
+  background: var(--panel2); border: 1px solid var(--line); color: var(--fg-dim);
+  padding: 5px 10px; border-radius: 7px; cursor: pointer; display: flex; gap: 6px; align-items: baseline;
+}
+.vtab.is-on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.vtab-name { font-weight: 600; }
+/* 開催区分の印（☀️モーニング／🌙ナイター／⭐ミッドナイト。デイは無印）。場名とグレードの間。
+   並び順（1R発走の早い順）と合わせて「いま何枠か」を一目で見るための印。
+   ⚠️絵文字は字より下に沈んで見えるので、ベースラインでなく中央でそろえる（`align-self: center`）。
+     ⚠️`.vtab` が `align-items: baseline` なので、ここで上書きしないと印だけ下がる */
+.vtab-kubun { font-size: 11px; opacity: .95; align-self: center; line-height: 1; }
+.vtab-grade { font-size: 10px; opacity: .8; }
+
+.racecard { overflow-y: auto; flex: 1 1 auto; padding: 0 12px 24px; }
+.race { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; margin-bottom: 9px; }
+.race-head { display: flex; gap: 9px; align-items: baseline; margin-bottom: 5px; }
+.race-no { font-weight: 700; font-size: 15px; }
+.race-time { font-variant-numeric: tabular-nums; color: var(--gold); }
+.race-cls, .race-line { font-size: 11px; color: var(--fg-dim); }
+
+/* 競りの車を縦に積むので、単独の車は下端にそろえる（下の段が本来の並び） */
+.narabi { display: flex; align-items: flex-end; gap: 3px; margin-bottom: 6px; flex-wrap: wrap; }
+.narabi-label { font-size: 11px; color: var(--fg-dim); margin-right: 3px; padding-bottom: 3px; }
+.narabi-sep { color: var(--fg-dim); margin: 0 2px; padding-bottom: 3px; }
+/* 競り＝上が競りに行く側。細い縦線でつながりを示す */
+.narabi-seri {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 2px; border-radius: 6px; background: var(--seri-bg);
+  outline: 1px solid var(--seri-line);
+}
+
+.car {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 21px; height: 21px; border-radius: 5px;
+  font-weight: 700; font-size: 13px; flex: 0 0 auto;
+  box-shadow: 0 0 0 1px var(--car-ring) inset;
+}
+
+.racers { display: flex; flex-direction: column; gap: 1px; }
+/* ラインの切れ目（§48）＝行を並び順に並べたうえで、ラインごとに細い線で区切る。
+   ⚠️行（.racer）の枠線には描かない＝行は選択中の青い枠（is-current）に border を使っているので、
+     そこに区切りを混ぜると選択の枠と見分けがつかない。独立した1本の要素にする。 */
+.line-gap { height: 1px; background: var(--line); margin: 3px 6px; }
+
+/* 車番・選手名・級班・脚質・得点／逃捲差マ／BHS／勝率2連3連／役割
+   選手名は minmax(100px, 1fr)＝スクロールバーの有無で余る数pxを吸わせるための 1fr。
+   ⚠️各行が別々のgridなので、選手名以外は必ず固定px（max-contentにすると行ごとに列位置がずれる） */
+.racer-row {
+  display: grid;
+  grid-template-columns: 24px minmax(100px, 1fr) 28px 18px 46px
+                         repeat(4, 17px) repeat(3, 17px) repeat(3, 30px) 56px;
+  gap: 5px; align-items: center; width: 100%; text-align: left;
+}
+.racer-head {
+  font-size: 10px; color: var(--fg-dim); padding: 0 6px 3px;
+  /* 明細の行は border:1px transparent を持つので、見出しにも同じ幅の枠を入れないと列が2pxずれる
+     （1fr がその差を吸うため。縦線を引くとこのズレが見えてしまう） */
+  border: 1px solid transparent; border-bottom-color: var(--line);
+  margin-bottom: 3px;
+}
+
+/* ── 列のまとまりを区切る縦線（9/23 Naoto「得点と逃／マとB／Sと勝率／3連の右側」） ──
+   線を引く場所は today.js の SEP_AT が唯一の出どころ＝見出しと明細で必ず同じ列に付く。
+   ⚠️行は上下3pxのpadding＋1pxのborder＋1pxのgapで区切られているので、セルにborderを引くだけだと
+   線が行ごとに細切れになる。セルを行の高さいっぱいに伸ばし、::before を上下にはみ出させて1本につなぐ。
+   🔴はみ出しは**隣の行と重なる量**にすること（2026-09-23 Naoto「なんか縦線おかしくない？」）。
+     実測＝セルの高さ33px・セルとセルの隙間9px。±4pxでは 8px しか埋まらず**1pxずつ切れて破線に見える**。
+     ±7px（計14px＞9px）にして重ねる。下へ3px余るが `.race` の padding 9px の内側なので出ない。 */
+.racer-row > .col-sep {
+  position: relative; align-self: stretch;
+  display: flex; align-items: center; justify-content: center;
+}
+.racer-row > .col-sep::before {
+  content: ''; position: absolute; left: -3px; top: -7px; bottom: -7px;
+  width: 2px; background: var(--line);   /* 9/23 Naoto「太さを倍に」＝1px→2px */
+}
+.racer-row > .racer-role.col-sep { justify-content: flex-end; }
+/* 見出しは上へはみ出させない。下は罫線を越えるところまで伸ばして明細の線とつなげる */
+.racer-head > .col-sep::before { top: 0; bottom: -4px; }
+.racer {
+  cursor: pointer; background: transparent;
+  border: 1px solid transparent; border-radius: 6px; padding: 3px 6px;
+}
+.racer:hover:not(:disabled) { background: var(--panel2); }
+.racer:disabled { opacity: .5; cursor: default; }
+/* いま右に出している選手（9/23 Naoto「出走表上で今どの選手選んでるか分かるように」）。
+   ⚠️選手一覧の .rrow.is-current は「枠線＋panel2」だが、ここは**hoverも panel2** なので
+   同じにすると枠線だけの差になって見分けにくい。出走表だけ薄い青を敷いて区別する。 */
+.racer.is-current {
+  background: var(--cur-bg);
+  border-color: var(--accent);
+}
+.racer.is-current:hover:not(:disabled) { background: var(--cur-bg-hover); }
+.racer-name { display: flex; flex-direction: column; min-width: 0; }
+.racer-name-main { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.racer-sub { font-size: 10px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.racer-kyuhan, .racer-kyaku { font-size: 11px; color: var(--fg-dim); }
+/* 競走得点（§49・2026-09-24 Naoto）＝基本は白・レース内の1位を赤・2位を青（見出し「得点」も白）。
+   ⚠️色は変数（--ng／--accent）＝白背景では濃い赤・濃い青に切り替わる（§27の約束）。
+   🔑旧は全員を金色にしていた＝色が「得点の欄」を示すだけで、誰が上かは読めなかった。 */
+.racer-score { font-size: 12px; color: var(--fg); font-variant-numeric: tabular-nums; text-align: right; }
+.racer-score.is-top1 { color: var(--ng); }
+.racer-score.is-top2 { color: var(--accent); }
+.racer-role { font-size: 10px; color: var(--role-fg); text-align: right; }
+/* 直近4ヶ月成績の数字。0は薄くして、値のあるところだけ目に入るようにする */
+.n { font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
+.n-rate { color: var(--fg); }
+/* 🔴**opacity で薄くしてはいけない**（2026-09-23 Naoto「他の3本が途中薄くなってる」）。
+   opacity はその要素の `::before`＝**列の区切り線まで**薄くするので、
+   0が並ぶ行だけ縦線がかすれて見える。0が出ない「直近4ヶ月」の列だけ線が濃いままだったのがその証拠。
+   ⇒ **文字の色だけ**を薄くする（`--fg-faint`＝以前の opacity .3 と同じ見え方の色）。 */
+.n.is-zero { color: var(--fg-faint); }
+
+/* ── 詳細 ── */
+.dt-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 14px; }
+.dt-head-l { flex: 1 1 auto; min-width: 0; }
+.dt-head-r { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.dt-name { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.dt-name-main { font-size: 26px; font-weight: 700; }
+.dt-name-kana { font-size: 13px; color: var(--fg-dim); }
+.dt-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+
+.sec { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; }
+.sec-head {
+  display: flex; align-items: baseline; gap: 12px; width: 100%; text-align: left;
+  background: transparent; border: 0; padding: 11px 14px; cursor: pointer;
+}
+.sec-title { font-weight: 700; font-size: 15px; }
+.sec-title::before { content: "▾ "; color: var(--fg-dim); }
+.sec[data-folded="1"] .sec-title::before { content: "▸ "; }
+.sec-hint { font-size: 11px; color: var(--fg-dim); }
+.sec-body { padding: 0 14px 14px; }
+.sec[data-folded="1"] .sec-body { display: none; }
+
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; }
+.kv-k { color: var(--fg-dim); }
+.kv-line { font-size: 13px; margin-bottom: 8px; }
+.lbl { font-size: 12px; color: var(--fg-dim); margin: 10px 0 5px; }
+
+/* ── 役割別＝ボタンで1つだけ開く ──
+   「今日この人は番手だから番手を見る」という使い方なので、6つ全部を出すと探す手間になる。
+   ボタンに走数を出し、メモがある役割には右上に点を付ける。 */
+.role-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.role-tab {
+  position: relative; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  background: var(--panel2); border: 1px solid var(--line); color: var(--fg-dim);
+  border-radius: 9px; padding: 7px 15px;
+}
+.role-tab:hover { color: var(--fg); border-color: var(--accent); }
+.role-tab.is-on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.role-tab-label { font-weight: 700; font-size: 14px; }
+.role-tab-n { font-size: 10px; opacity: .8; font-variant-numeric: tabular-nums; }
+.role-tab.has-note::after {
+  content: ""; position: absolute; top: 5px; right: 6px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--gold);
+}
+.role-tab.is-on.has-note::after { background: var(--on-accent); }
+/* 今日の役割（一覧から開いたときは走数が最多の役割）＝**役割名も走数も白太字**（§50・2026-09-24 Naoto）。
+   ほかのボタンはグレーのまま＝§33「今日＝白太字／他＝グレー」と同じ分担。
+   ⚠️押している（青地 is-on）ときも白＝既定の暗い字（--on-accent）だと青地の上で沈む。
+     色は変数（--on-key）＝白背景でも青地の上は白、ふつうの地の上は --fg（濃い字）になる。 */
+.role-tab.is-key { color: var(--fg); }
+.role-tab.is-key .role-tab-n { font-weight: 700; opacity: 1; }
+.role-tab.is-key.is-on { color: var(--on-key); }
+
+.role-panel { min-height: 32px; }
+
+/* ── 集計期間の切り替え（2026-09-24 §41）＝役割別の本体の先頭の1行 ──
+   「期間 [直近4ヶ月][8ヶ月][1年] 2026/05/22〜2026/09/22」。
+   ボタンは あいうえお（.kana）と同じ大きさ・同じ押した色＝画面に3種類目のボタンを増やさない。
+   ⚠️360pxでは日付が2行目に折り返してよい（flex-wrap） */
+.win-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.win-k { font-size: 12px; color: var(--fg-dim); margin-right: 2px; }
+.win-btn {
+  background: var(--panel2); border: 1px solid var(--line); color: var(--fg-dim);
+  padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap;
+}
+.win-btn:hover { color: var(--fg); }
+.win-btn.is-on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+.win-btn:disabled { opacity: .6; cursor: default; }
+.win-range { font-size: 11px; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.role-body { background: var(--panel2); border: 1px solid var(--line); border-radius: 9px; padding: 12px; }
+.role-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px; }
+.role-label { font-weight: 700; font-size: 15px; }
+.role-hint { font-size: 11px; color: var(--fg-dim); }
+.role-n { font-size: 11px; color: var(--fg-dim); }
+.role-figs { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 10px; }
+.fig { display: flex; flex-direction: column; }
+.fig-v { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--gold); }
+.fig-k { font-size: 10px; color: var(--fg-dim); }
+
+/* 着順ごとの回数の表（9/23）。列を詰めたいので .split より狭く、内訳は着順の真下に縦積み */
+.rank .split-v { font-size: 13px; }
+/* 🔴列は52px固定（detail.js の RANK_COL）＝中身が広くても列を押し広げない。
+   min-width:0 が無いとflexの子は縮まず、はみ出しが左（前の列）へ流れる。
+   内訳の1行（ラベル＋回数）は入らなければ2行に折る（横に溢れて隣の列に重ならない）。 */
+.rank-sub { display: flex; flex-direction: column; gap: 1px; align-items: flex-end; min-width: 0; }
+/* レース種別・グレードの表のマス＝**数字の真下に決まり手の内訳**を入れる（2026-09-24）。
+   🔑着順の表は内訳を専用の行にまとめるが、こちらは行ごとに区分が違うので
+      「どの数字の内訳か」が縦に読めるよう、同じマスの中に積む。
+   ⚠️`min-width: 0` が無いと、内訳の文字が列（52px固定）を押し広げて表どうしの列がずれる（§36）。 */
+.rank-cell { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
+.rank-cell-sub { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.rank-sub-i { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; align-items: baseline; white-space: nowrap; }
+.rank-sub-i.is-thin { opacity: .35; }
+/* 「うち番手に差され」＝決まり手とは別の軸で上の行と重なる。
+   ⚠️ラベルが長く列からはみ出して見えるので、**2段組み**にして列の幅に収める。
+   区切り線で「上の内数」だと分かるようにする */
+.rank-sub-i.is-note {
+  flex-direction: column; align-items: flex-end; gap: 0;
+  margin-top: 3px; padding-top: 3px; border-top: 1px dotted var(--line);
+}
+.rank-sub-i.is-note .rank-sub-k { font-size: 9px; line-height: 1.2; }
+.rank-sub-k { font-size: 10px; color: var(--fg-dim); }
+.rank-sub-v { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--fg-strong); }
+/* 今日でない行・表の内訳は、数字（.split-v.is-off）と同じくグレーで細く（§47・2026-09-24 Naoto）。
+   🔴それまでは数字だけ落として内訳は白太字のまま＝レース種別・グレード・戦法別で「今日でない行の
+      決まり手」がいちばん目立っていた。入れ物（.rank-sub）に is-off を付けて中の値ごと落とす。 */
+.rank-sub.is-off .rank-sub-v { font-weight: 400; color: var(--fg-dim); }
+
+/* ライン決着とレース種別は、戦法別と同じ表（.split）で出す。
+   セルの中の走数（小さい灰色）と、出走表から開いたときの「今日の種別」の行（青） */
+.split-n { font-size: 10px; color: var(--fg-dim); font-weight: 400; margin-left: 5px; font-variant-numeric: tabular-nums; }
+/* ※is-cur / is-strong の指定は .is-thin より後ろ（下のほう）にまとめてある */
+/* 0回は薄く＝値のあるところだけ目に入るように（出走表の数字と同じ扱い） */
+.split-v.is-zero { opacity: .3; }
+
+/* S取り＝車番ごとの回数。内枠ほど取りやすいので並びで見せる */
+.scar { display: flex; gap: 10px; flex-wrap: wrap; margin: 2px 0 10px; }
+.scar-i { display: inline-flex; align-items: center; gap: 4px; }
+.scar-i.is-zero { opacity: .3; }
+.scar-n { font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* 戦法別・ライン決着・レース種別ごとの表。
+   列数は中身で変わるので grid-template-columns は detail.js 側から流し込む。
+   ⚠️2026-09-23（第2版）Naoto指示で **走数による薄字は廃止**。
+     .is-thin が残っているのは「記録が0のマス」だけ。 */
+.split {
+  display: grid; align-items: baseline;
+  justify-content: start;          /* 列を詰めて左に寄せる＝上の本体の数字と視線がつながる */
+  column-gap: 18px; row-gap: 4px;
+  margin: 0 0 10px; padding: 8px 10px;
+  background: var(--fill-soft); border-radius: 7px;
+}
+.split-label { font-size: 11px; color: var(--fg-dim); white-space: nowrap; }
+/* 着順の表（本体・戦法別・種別）は**列の型を全部同じにする**（左端96px＋52px固定×9・detail.js の rankCols）
+   ＝縦に並べたとき 1着・2着…の列がそろって見比べられる（2026-09-23 これが戦法別を同じ形にした理由）。
+   列が9〜11本あるので、この表だけ列の間も詰める。🔴隙間もここ1か所＝表ごとに変えない
+   （種別だけ12pxにしていたのが列ずれの原因の1つだった・2026-09-23 Naoto指摘） */
+.split.rank { column-gap: 14px; }
+/* 「二分戦 ◀ 今日」と「11走」は縦に積む＝横に並べると左端の列が広がって列がずれる */
+.split.rank > .split-label { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.split.rank > .split-label .split-n { margin-left: 0; }
+/* ⚠️nowrap＝「3車ライン ◀ 今日」で折り返させない（2026-09-23） */
+.split-h { font-size: 10px; color: var(--fg-dim); text-align: right; white-space: nowrap; }
+.split-k { font-size: 11px; color: var(--fg-dim); white-space: nowrap; }
+.split-v {
+  font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.split-label.is-thin, .split-k.is-thin, .split-v.is-thin, .rank-sub.is-thin { opacity: .45; }
+/* 今日に当たらない列・行の数字は**グレーにして細くする**（2026-09-23 Naoto 第3版
+   「太字になってはいるけど差があまり分からないから、逆に対象のやつをグレーで表示するのがいい」）。
+   🔴太さだけでは差が出なかった＝700対500はもちろん、**700対400でも並べないと分からない**。
+     色を落とすと一目で分かる＝見出しと行ラベルが最初からこの方式（`--fg-dim`）だったのと同じ理屈。
+   ⚠️「走数が少ないから薄く」ではない＝**今日かどうかだけ**で決める。走数による薄字は§25で全廃したまま。
+     出走表から開いていないとき（今日が分からないとき）は付けない＝全部そろった見た目のまま */
+.split-v.is-off { font-weight: 400; color: var(--fg-dim); }
+.split-note { margin-top: 2px; }
+
+/* ── バンク別（§43・2026-09-24）＝この枠だけ数字が％ ──
+   ほかの表は「1人の中での散らばり」を見るので回数だが、ここは**行どうしを比べる**
+   （軽い vs 重い／場と場）ので％。ただし1場あたり中央値3走しかないため、
+   **％の真下に必ず回数**を出して母数を消さない。
+   ⚠️列の型は detail.js の `bankCols()` の1か所から流し込む（着順の表とは別の型でよい＝
+     並べて見比べる相手がいない。2つのバンクの表どうしだけがそろっていればよい）。 */
+.bank-cell { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
+.bank-n { font-size: 10px; color: var(--fg-dim); font-variant-numeric: tabular-nums; line-height: 1.3; }
+/* 行ラベルは2段＝1段目に場名（＋青い「◀ 今日」）、2段目に周長・区分・走数。
+   ⚠️`.split` は align-items:baseline なので、2段にするには行ラベル側で縦積みを指定する
+     （`.split.rank > .split-label` と同じ作り）。 */
+.split.bank > .split-k { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.bank-meta { font-size: 9px; color: var(--fg-dim); font-weight: 400; white-space: nowrap; }
+
+/* ※旧 `.sub*`（場別だけの折りたたみ・§45）は 2026-09-24 に撤去した（§46）。
+   同じ日に枠そのものが既定で閉じるようになり、折りたたみが二重になったため。 */
+
+/* ── 強調（2026-09-23 Naoto）──
+   ⚠️この2つは **.is-thin より後ろに置く**こと。同じ強さの指定なので、先に書くと
+     「走数が少ない＝薄字」に負けて、いちばん見たい今日の欄が薄いままになる。
+   is-strong＝見出し・「全体」・今日の並びに当たる行/列（太字）
+   is-cur   ＝今日そのものの**見出しと行ラベル**（青＋太字・薄字にしない）。
+             9/23 Naoto「予選が白太字で、今日の一般が薄いのが気になる。普通は今日を太字にするのでは」
+   🔑**役割分担（2026-09-23 Naoto「回数のところは青字ではなく白太字に。他と合わせて」）**
+     ＝**青い「◀ 今日」が「どこを見るか」を指し、白い太字とグレーが「どのマスか」を指す**。
+     だから **`is-cur` は数字のマス（.split-v）には付けない**。行をまるごと青く塗ると、
+     その行の数字がどれも同じ重みに見えて、いちばん見たいマスが埋もれる。 */
+.split-label.is-strong, .split-k.is-strong, .split-h.is-strong { color: var(--fg); font-weight: 700; }
+/* 今日に当たる行・列だけは「走数が少ない＝薄字」に負けない（見出しは薄字のままでよい） */
+.split-k.is-strong, .split-h.is-strong { opacity: 1; }
+/* ⚠️`.split-h.is-cur` が無いと、ライン決着の列見出し（「3車ライン ◀ 今日」）だけ青くならない
+   ＝is-strong の白のまま。行ラベルだけ青くなって片方だけ浮く（2026-09-23 に追加） */
+.split-label.is-cur, .split-k.is-cur, .split-h.is-cur { color: var(--accent); opacity: 1; font-weight: 700; }
+/* ※旧 `.split.is-compact`（種別だけ隙間12px）は廃止＝列がずれる原因だった（2026-09-23） */
+
+/* 並び実績など、タグを並べる入れもの（選択式タグは9/23に廃止＝Yが自分で書く方針） */
+.chips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+
+/* ── メモ欄：ふだんは読むだけ／「編集」で書ける ──
+   1行の入力欄だと長い文の後ろが見えなくなるため（9/22 Naoto指摘）、
+   読むほうは折り返して全文出し、書くほうは中身に合わせて高さが伸びる。 */
+.note-field { display: flex; gap: 6px; align-items: flex-start; }
+.note-view {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 13px; line-height: 1.65;
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+  padding: 6px 9px; border-radius: 7px;
+  background: var(--fill-soft2); border: 1px solid transparent;
+}
+.note-view.is-empty { color: var(--fg-dim); font-size: 12px; background: transparent; }
+/* 選手特徴＝重要な手書きなので、空でも書く場所があると分かる大きさにする */
+.note-view.is-big { min-height: 84px; font-size: 14px; line-height: 1.75; }
+.note-input.is-big { min-height: 84px; font-size: 14px; line-height: 1.75; }
+.note-input {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 13px; line-height: 1.65; font-family: inherit;
+  resize: none; overflow: hidden; min-height: 32px;
+  padding: 6px 9px; border-radius: 7px;
+  background: var(--panel2); border: 1px solid var(--accent); color: var(--fg);
+}
+.note-input:focus { outline: none; }
+.note-edit {
+  flex: 0 0 auto; cursor: pointer; white-space: nowrap;
+  background: transparent; border: 1px solid var(--line); color: var(--fg-dim);
+  border-radius: 6px; padding: 4px 9px; font-size: 11px;
+}
+.note-edit:hover { color: var(--fg); border-color: var(--accent); }
+.note-edit.is-done { color: var(--on-accent); background: var(--accent); border-color: var(--accent); font-weight: 700; }
+
+/* 観察の入力欄＝これから書く欄なので常に書ける。高さだけ伸びる */
+.ta-grow { resize: none; overflow: hidden; min-height: 34px; line-height: 1.65; font-family: inherit; }
+
+/* 特徴 */
+/* 追走能力＝縦に積むだけ。
+   🔴**ここに max-width を付けない**（2026-09-23 Naoto「根拠の枠が狭い・書くの位置が真ん中より」）。
+      560pxで止めていたせいで、中の「そう判断した根拠」だけ枠が半分になり、
+      「書く」ボタンも画面の真ん中に来て、**S取りの同じ欄と位置がそろっていなかった**。
+   🔑幅を絞るのは**中身ごと**に決める（選ぶ欄は260pxで足りるが、書く欄は広いほうがよい）。 */
+.follow { display: flex; flex-direction: column; gap: 8px; }
+.follow .sel { max-width: 260px; }
+
+.savebar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; }
+.savestate { font-size: 12px; color: var(--gold); }
+
+/* 観察ログ */
+.obs-form { background: var(--panel2); border: 1px solid var(--line); border-radius: 9px; padding: 10px; margin-bottom: 12px; }
+.obs-form-top { display: flex; gap: 7px; margin-bottom: 8px; flex-wrap: wrap; }
+.obs-form .inp { width: 100%; }
+/* 🔴上の `.obs-form .inp` のほうが詳細度が高いので、幅を決める行は **.obs-form を頭に付ける**。
+   付け忘れると日付欄が1行まるごと占領して、役割・場・開催日・Rが縦に崩れる（2026-09-23に実際そうなった）。
+   ⚠️type=date は中に「2026/09/23」＋カレンダーのボタンが入るので156px要る */
+.obs-form .inp-date { width: 156px; }
+.obs-form .inp-xs { width: 62px; }
+.obs-form-bar { display: flex; align-items: center; gap: 14px; margin-top: 9px; }
+.chk { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-dim); cursor: pointer; }
+.obs-list { display: flex; flex-direction: column; gap: 7px; }
+.obs { background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.obs.is-pub { border-left-color: var(--ok); }
+.obs-top { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.obs-body { margin: 6px 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.obs-bar { display: flex; align-items: center; gap: 8px; }
+.obs-bar .muted { margin-right: auto; }
+
+/* 参考 */
+.pre { font-size: 12px; color: var(--fg-dim); line-height: 1.7; }
+.rel-line { display: flex; gap: 7px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; }
+.rel-k { font-size: 11px; color: var(--fg-dim); min-width: 74px; }
+.rel-v { font-size: 12px; }
+.linkish { background: transparent; border: 0; color: var(--accent); cursor: pointer; padding: 0 4px; font-size: 12px; text-decoration: underline; }
+
+/* 本人コメント */
+.cmt { border-bottom: 1px solid var(--line); padding: 7px 0; }
+.cmt:last-child { border-bottom: 0; }
+.cmt-head { font-size: 11px; color: var(--fg-dim); }
+.cmt-body { font-size: 13px; margin-top: 2px; }
+
+/* ボタン */
+.btn {
+  background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
+  padding: 7px 13px; border-radius: 7px; cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+.btn-sm { padding: 5px 11px; font-size: 13px; }
+.btn-xs { padding: 3px 8px; font-size: 11px; }
+.btn-xs.is-on { background: var(--on-bg); border-color: var(--ok); color: var(--on-fg); }
+.btn-danger:hover { border-color: var(--ng); color: var(--ng); }
+
+/* トースト */
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(14px);
+  background: var(--toast-bg); border: 1px solid var(--line); color: var(--toast-fg);
+  padding: 9px 18px; border-radius: 9px; opacity: 0; pointer-events: none;
+  transition: opacity .16s, transform .16s; z-index: 50; max-width: 70vw;
+}
+.toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast[data-err="1"] { border-color: var(--ng); color: var(--toast-err-fg); }
+
+/* ═══════════ APIキーの入力（要件§39） ═══════════
+   iPhoneのホーム画面アプリは `?k=` を落として起動し、Safariとは保存場所も別
+   ＝URL以外にキーを入れる道。`hidden` の出し入れは keygate.js だけが触る。
+   🔑**画面全部を覆う**＝後ろの「つながりません」を触らせない・何をすればよいか1つだけにする。
+   ⚠️色は全部変数から取る（§27＝生の色を1つでも書くと白背景で破綻する）。
+   ⚠️上下の余白に safe-area を足す＝ホーム画面アプリでは時計とホームバーに食われる。 */
+.keygate {
+  position: fixed; inset: 0; z-index: 60;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+}
+/* 🔴**`display` を書いたら `[hidden]` を必ず自分で効かせる**（2026-09-23に実際に踏んだ）。
+   `hidden` 属性はブラウザ既定の `[hidden]{display:none}` で効いているだけなので、
+   クラスの `display:flex`（詳細度が上）に**黙って負ける**＝キーが入っているのに
+   入力画面が画面全部を覆ったままになっていた。
+   🔑**症状が見えにくい**＝JSからは `el.hidden === true` と正しく返るので、
+      属性だけ見る検査は通ってしまう。**確かめるなら描かれた結果**（`getComputedStyle().display`）を見る。 */
+.keygate[hidden] { display: none; }
+.kg-box {
+  width: 100%; max-width: 420px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 20px 18px;
+}
+.kg-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+.kg-lead { font-size: 14px; line-height: 1.7; margin: 0 0 14px; }
+/* 🔴幅は `.kg-box` を頭に付けて指定する＝`.inp` の既定に負けないため
+   （§30で `.obs-form .inp{width:100%}` の詳細度に負けて縦に崩れたのと同じ罠）。 */
+.kg-box .kg-inp { width: 100%; box-sizing: border-box; font-size: 16px; padding: 11px 12px; }
+/* ⚠️`font-size:16px` 未満だと iOS Safari が**勝手に画面を拡大する**（戻せない）。 */
+.kg-box .kg-go { width: 100%; margin-top: 12px; padding: 12px; font-size: 15px; }
+.kg-err { color: var(--ng); font-size: 13px; line-height: 1.6; margin: 12px 0 0; }
+.kg-note { color: var(--fg-dim); font-size: 12px; line-height: 1.7; margin: 16px 0 0; }
+
+/* ═══════════ スマホ（1カラム）＝要件§35 ═══════════
+   PCの2カラム（左＝さがす／右＝選手）を、狭い画面では **2つの画面に分けて行き来する**。
+   🔑ここは全部 `.app`（操作ビュー）と `body[data-view="work"]` の中の指定
+      ＝**出力ビュー（OBS）には一切かからない**（§27・§30と同じ約束）。
+   ⚠️700px＝タブレット縦（768px）より下。PCのウィンドウを狭めたときも同じ形になる。
+   ⚠️iPhone 375〜430px／Android 360〜412px ＝ **いちばん狭い360pxで設計**して、
+      広い端末では余白が増えるだけにする。使える幅は余白を引いた316px（検討メモ§1）。 */
+
+/* 戻りバーはPCでは出さない（2カラムなので戻る先がない） */
+.m-bar { display: none; }
+
+@media (max-width: 700px) {
+
+  /* ── 骨格：上から下へ流れる普通のページにする ──
+     PCは「画面を固定して各カラムが内部スクロール」。スマホでこれをやると
+     アドレスバーの出入りと喧嘩して下が見切れる端末がある。
+     ⚠️`html` は触らない＝出力ビューに影響させないため（`body[data-view="work"]` に限定）。 */
+  body[data-view="work"] { height: auto; min-height: 100%; }
+  .app { height: auto; min-height: 100%; }
+  .cols { display: block; min-height: 0; }
+  .col-left,
+  .app[data-tab="today"] .col-left { width: auto; flex: none; border-right: 0; }
+  /* ⚠️下の余白は **ホームバーの分（`safe-area-inset-bottom`）を足す**＝
+     足さないと一番下の行がiPhoneの横棒に隠れて押せない。 */
+  .col-right { padding: 8px 12px calc(64px + env(safe-area-inset-bottom, 0px)); overflow-y: visible; }
+  .list, .racecard { overflow-y: visible; }
+
+  /* ── 「さがす」か「選手」のどちらかだけを出す ──
+     `data-m` は main.js の MOBILE が付ける（detail＝選手を開いている）。
+     ⚠️`:not([data-m="detail"])` ＝ 起動直後（属性が無い）でも一覧が出る。 */
+  .app[data-m="detail"] .col-left { display: none; }
+  .app:not([data-m="detail"]) .col-right { display: none; }
+
+  /* ── 戻りバー ── */
+  .m-bar { display: block; padding: 2px 0 10px; }
+  .m-back {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
+    border-radius: 8px; padding: 9px 14px; font-size: 14px; cursor: pointer;
+  }
+
+  /* ── 上のバー：360pxに収める ──
+     🔴左右だけを詰める指定なので **`padding` の一括指定で上の safe-area を消さない**
+        （消すとホーム画面アプリで時計とタブが重なる＝2026-09-23 Yの実機）。 */
+  .topbar { padding: env(safe-area-inset-top, 0px) 10px 0; gap: 8px; }
+  .brand { display: none; }              /* タブを見れば何の画面か分かる */
+  .tab { padding: 6px 10px; font-size: 13px; }
+  .top-right { gap: 6px; }
+  .conn { font-size: 11px; padding: 3px 8px; }
+  .theme-btn { padding: 4px 8px; }       /* 文言は main.js が「○」だけに縮める */
+
+  /* ── 出走表：成績10列を出さない（§35-4）＝車・名前・級班・脚・得点・役割の6列 ──
+     🔴列を**作らない**のは today.js 側。ここは列の型だけ。
+        **両方そろえないと列がずれる**（片方だけ直すと見出しと明細がずれて読めなくなる）。 */
+  .racer-row { grid-template-columns: 24px minmax(90px, 1fr) 28px 18px 46px 56px; }
+  .racecard { padding: 0 8px calc(20px + env(safe-area-inset-bottom, 0px)); }
+  /* 🔴場のタブは**上に貼り付ける**（2026-09-23）。
+     スマホはページ全体がスクロールするので、場を押して目的のレースまで送ると
+     **タブが画面外へ出てしまう**（実測＝青森を押すと3,481px上）＝別の場に移るのに
+     10レース分スクロールして戻ることになり、「押したら近いレースが上」の機能が半端になる。
+     PCは `.racecard` の中だけが動くのでタブは元から残る＝この指定はスマホだけでよい。
+     ⚠️貼り付けた分だけ送り先をずらす（today.js の `scrollToRace` が sticky を見て高さを引く）。
+     ⚠️地の色を敷かないと、下を流れるレースがタブに透ける。 */
+  .venue-tabs {
+    padding: 8px 8px; position: sticky; top: 0; z-index: 3;
+    background: var(--bg); border-bottom: 1px solid var(--line);
+  }
+  .filters { padding: 8px; }
+  /* 検索窓と級班メニューを横に並べると窓が狭くて説明文が切れる＝窓を1行使わせて下に落とす */
+  .filters input[type="search"] { flex: 1 1 100%; }
+  .kana-rows { padding: 0 8px 8px; }
+  .list { padding: 0 6px calc(20px + env(safe-area-inset-bottom, 0px)); }
+
+  /* ── 枠の見出し ──
+     🔴PCは「見出し｜説明」の横並び。狭い画面だと説明に押されて**見出しのほうが折り返す**
+        （「役割 別の動 き」「本人のレース後 コメント」と割れる）。⇒ 縦に積む。 */
+  .sec-head { flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; }
+  .sec-title { white-space: nowrap; }
+  .sec-body { padding: 0 12px 12px; }
+  .sec { margin-bottom: 10px; }
+
+  /* ── 選手の見出し：名前の右に「公式データを更新」を置く幅が無い＝下へ回して横に並べる ── */
+  .dt-head { flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .dt-head-r { flex-direction: row; align-items: center; gap: 10px; }
+  .dt-name-main { font-size: 22px; }
+
+  /* ── 表（§35-4）──
+     🔴PCは見出し・ラベルを1行に固定（nowrap）しているが、スマホは列が狭いので**折り返させる**。
+        折り返しを許さないと「三分戦以上 ◀ 今日」が列からはみ出して、右に横スクロールが出る。 */
+  .split { column-gap: 10px; padding: 8px; }
+  .split.rank { column-gap: 10px; }
+  .split-k, .split-h, .split-label { white-space: normal; }
+  .split-v { font-size: 13px; }
+  .rank .split-v { font-size: 13px; }
+  /* 🔴行ラベルの走数は**縦に積む**＝「予選 ◀ 今日」と「8走」を横に並べると72pxに入らず、
+     「8」と「走」が離れて改行する（実機幅で確認）。PCは横並びのままでよい（ラベル列が96px） */
+  .split.rank > .split-k { display: flex; flex-direction: column; align-items: flex-start; }
+  .split.rank > .split-k .split-n { margin-left: 0; }
+
+  /* 縦型（着順を縦・戦法を横）の内訳＝着順の行の下に、列の並びをそろえて小さく出す。
+     ⚠️`grid-column: 2 / -1` で左のラベル列を除いた全幅に敷き、中を親と同じ列数で割る
+       （列の幅は detail.js が流し込む＝上の数字と縦にそろう）。 */
+  .rank-v-sub { grid-column: 2 / -1; display: grid; column-gap: 10px; margin: -3px 0 2px; }
+  /* ⚠️数字（.split-v）が右寄せなので、内訳も**右に寄せる**＝上下で右端がそろって視線が縦につながる。
+     左寄せのままだと「5回」の下の「逃1 捲3 差1」が左にずれて、どの数字の内訳か追いにくい */
+  .rank-v-sub > div { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+  .rank-v-i { font-size: 10px; color: var(--fg-dim); white-space: nowrap; }
+  .rank-v-i.is-note { color: var(--fg-faint); }
+
+  /* ── 観察ログの入力：指で押せる大きさに ── */
+  .obs-form .sel, .obs-form .inp { min-height: 38px; }
+  .obs-form-bar { flex-wrap: wrap; row-gap: 8px; }
+}
+
+/* ═══════════ 出力ビュー（OBSブラウザソース） ═══════════
+   背景は完全透明。触れない。文字は映像の上でも読めるよう縁取りを付ける。 */
+body[data-view="output"] { background: transparent; }
+body[data-view="output"] * { pointer-events: none; user-select: none; }
+
+.outcard { padding: 0; }
+.oc {
+  width: 520px; background: rgba(12, 16, 22, .86); border: 2px solid rgba(232, 181, 58, .8);
+  border-radius: 12px; padding: 14px 16px; color: #fff;
+  text-shadow: 0 2px 4px rgba(0,0,0,.6);
+}
+.oc-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.oc-name { font-size: 28px; font-weight: 800; }
+.oc-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+.oc-meta-i { font-size: 13px; color: #cfd8e4; }
+.oc-lbl { font-size: 11px; color: var(--gold); letter-spacing: .08em; margin: 8px 0 4px; }
+.oc-figs { display: flex; gap: 16px; flex-wrap: wrap; }
+.oc-fig { display: flex; flex-direction: column; align-items: center; }
+.oc-fig-k { font-size: 11px; color: #cfd8e4; }
+.oc-fig-v { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.oc-fig-n { font-size: 10px; color: #9aa6b4; }
+.oc-obs { display: flex; flex-direction: column; gap: 3px; }
+.oc-o { display: flex; gap: 8px; align-items: baseline; }
+.oc-o-role { font-size: 11px; color: var(--gold); min-width: 62px; }
+.oc-o-text { font-size: 15px; }
+.out-err { color: #ff9a9a; font-size: 14px; padding: 8px; }
+
+/* ═══════════ アプリの「選手」タブ（2026-10-16 選手DB統合・段1）═══════════
+   🔑白で固定（main.js が data-theme="light"）。地・枠・字はアプリ（app.css）の色に寄せる＝タブを切り替えても色が飛ばない。
+   ⚠️青（--accent）は選手DBのまま＝「◀ 今日」「いま見ている」の青はNaotoが決めた意味（§33）なので紫に変えない。 */
+body[data-view="work"][data-theme="light"] {
+  --bg: #e9e7e1;
+  --panel: #f7f6f2;
+  --panel2: #e4e2db;
+  --line: #d3d0c7;
+  --fg: #23252a;
+  --fg-dim: #555a63;
+}
+html, body { font-family: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; }
+.topbar { height: auto; min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
+
+/* 出走表から開いた（over）＝詳細だけ。上のタブは出さない（戻るはアプリが閉じる） */
+.app[data-mode="over"] .topbar { display: none; }
+.app[data-mode="over"] .col-right { padding-top: 10px; }
+
+/* 書いた人ごとのメモ（読むだけ）＝名前を必ず添える（Naoto「誰が書いたか区別できるように」） */
+.note-reads { display: flex; flex-direction: column; gap: 8px; }
+.note-read { display: flex; flex-direction: column; gap: 3px; }
+.note-by {
+  align-self: flex-start; font-size: 11px; font-weight: 700; color: var(--fg-dim);
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; white-space: nowrap;
+}
+.follow-read { display: flex; align-items: center; gap: 8px; }
+.follow-v { font-size: 14px; font-weight: 700; }
+.obs-pub { font-size: 10px; color: var(--ok); border: 1px solid var(--ok); border-radius: 4px; padding: 0 5px; }
+
+/* 出走表タブ＝本日・明日の開催を並べるだけ（押すとアプリの出走表） */
+.vday { margin: 4px 0 14px; }
+.vday-head { font-size: 13px; font-weight: 700; margin: 0 2px 6px; }
+.vday-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+.vbtn {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; text-align: left; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; color: var(--fg);
+}
+.vbtn:hover { border-color: var(--accent); }
+.vbtn.is-stop { opacity: .5; }
+.vbtn .vtab-name { font-size: 15px; }
+.vtab-grade.is-g { color: var(--gold); font-weight: 700; opacity: 1; }
+.vbtn-nichi { font-size: 11px; color: var(--fg-dim); }
+.vday-note { margin: 4px 2px 0; }
