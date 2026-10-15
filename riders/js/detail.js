@@ -1,0 +1,1567 @@
+/* ===========================================================
+   detail.js — 選手詳細（公式データ・役割別・観察ログ・入力）
+   ===========================================================
+   画面の上から順に
+     ①見出し（名前・級班・得点・出自）
+     ②基礎データ（keirin.jp）
+     ③選手特徴（自由記述）＝いちばん大事な手書きなので上に置く（9/23 Naoto指定）
+     ④役割別 6区分＝自動集計の実績＋タグ＋メモ
+     ⑤追走能力
+     ⑤.5 バンク別（軽い／重い／その他・場別。この枠だけ数字が％＝行どうしを比べる表だから）
+     ⑥観察ログ（1件ずつ積む・配信OKの印）
+     ⑥参考（級班履歴・出場予定・人間関係・競輪学校）
+     ⑦本人コメント（内部限定・折りたたみ）
+   ⚠️⑦と④は出力ビューへ出さない。出るのは①②③の数字と、⑤のうち配信OKのものだけ。
+
+   🔄2026-10-16 アプリへ統合（段1＝見るだけ・要件定義_選手DB統合）
+     ・選手メモは**書いた人ごと**（GASの memos＝[{by, feature, follow, note…}]）。読む欄は書いた人の名前を必ず添える
+       （Naoto「Yが書いたものか自分が書いたものかを区別できるように」）。誰の分が届くかはGASが決める。
+     ・CONFIG.CAN_WRITE が false の間は書く道具（編集・保存・観察の追加・配信OK・削除・公式データを更新）を出さない。
+       ⚠️書く側の古いコード（noteField の編集・saveMemo・obsForm）は段2で人ごとの保存に作り直すまで残してある。
+*/
+
+var DETAIL = (function () {
+
+  var cur = null;     // { rider, memo, obs, comments, tags }
+  var ctx = null;     // 出走表から開いたときの文脈（場・日付・R・役割）
+  var statsAll = null;
+  var dirty = false;
+  var cache = {};     // 登録番号 → 取得済みの詳細。同じ選手を開き直したら往復なしで出す
+  var seq = 0;        // 連打したとき、あとから届いた古い返事で上書きしないための番号
+  var editing = {};   // メモ欄ごとに「いま書いているか」。既定は読むだけ（下の noteField）
+  // 自動保存。🔑「完了」を押した＝保存された、と読めてしまうので、実際に保存する作りにした
+  //   （9/23 Naoto指摘）。打っている間も1.2秒止まれば勝手に保存する。
+  var saveTimer = null, changeSeq = 0, saveSeq = 0;
+  // いま開いている役割。出走表から開いたときは、その日その人が回る役割を最初から開く
+  // （9/23 Naoto「この人が今日番手走るから番手の情報見よう、となる」）
+  var openRole = null;
+  // 表の左端の列幅。着順の表（本体・戦法別・種別）とライン決着で共通にして列をそろえる
+  var LABEL_W = '96px';
+  /* 着順の表（本体・戦法別・種別）の 1着〜9着 の列幅。🔴**固定幅**（`minmax(52px, auto)` にしない）。
+     2026-09-23 Naoto「1着〜9着の位置が着順・戦法別・種別でずれている」＝実測で2つの原因が重なっていた：
+       ①種別だけ 44px＋隙間12px の別の型だった（9着で99pxずれ）
+       ②`auto` だと**中身の広いマスがその列だけ押し広げる**＝「うち番手に差され」のある表だけ2着が61pxになり、
+         同じ型のはずの二分戦（52px）と3着から9pxずれていた
+     ⇒ 4つの表の列の型を**この1か所**から出す（`rankCols`）。中身が広くなっても列は動かない（はみ出す側が折り返す）。
+     ⚠️幅を変えるときは 1370px のPCで入るか見る＝96＋52×9＋隙間14×9＝690px がいまの上限ぎりぎり。 */
+  var RANK_COL = '52px';
+  function rankCols(nCol) { return LABEL_W + ' repeat(' + nCol + ', ' + RANK_COL + ')'; }
+
+  /** seed＝一覧や出走表が持っている名前・級班・得点。GASの返事を待たずに見出しだけ先に出す */
+  function open(reg, context, seed) {
+    flush();            // 前の選手の書きかけを先に保存する
+    // スマホは1カラム＝「さがす」画面から「選手」画面へ移る（§35）。PCでは data-m が付くだけで見た目は変わらない
+    if (window.MOBILE) MOBILE.toDetail();
+    ctx = context || null;
+    dirty = false;
+    editing = {};
+    openRole = (ctx && ctx.role) || null;
+    var box = document.getElementById('detail');
+    var my = ++seq;
+
+    if (cache[reg]) {
+      cur = cache[reg];
+      if (!statsAll) API.stats(win).then(function (s) { statsAll = s || { riders: {} }; if (seq === my) render(); });
+      render();
+      return;
+    }
+
+    clear(box);
+    if (seed) box.appendChild(head(Object.assign({ reg: reg }, seed), true));
+    box.appendChild(el('div', 'empty', '詳細を読み込み中…'));
+
+    Promise.all([API.rider(reg), API.stats(win)]).then(function (res) {
+      if (seq !== my) return;          // すでに別の選手を開いている
+      cur = res[0];
+      // 名簿にもkeirin.jpのプロフィールにも無かった＝出走表が持っていた名前・級班などで見出しを出す
+      if (cur.rider && !cur.rider.name && seed) {
+        ['name', 'kyuhan', 'pref', 'term', 'age', 'kyaku', 'score'].forEach(function (k) { if (seed[k] && !cur.rider[k]) cur.rider[k] = seed[k]; });
+      }
+      cur.memos = cur.memos || [];
+      if (!cur.memo) cur.memo = { reg: reg };   // 書く側の古いコード（段2で作り直す）が落ちないように
+      cache[reg] = cur;
+      statsAll = res[1] || { riders: {} };
+      render();
+    }).catch(function (e) {
+      if (seq !== my) return;
+      clear(box);
+      box.appendChild(el('div', 'empty', '開けませんでした：' + e.message));
+    });
+  }
+
+  function stats() {
+    var reg = cur && cur.rider && cur.rider.reg;
+    return (statsAll && statsAll.riders && statsAll.riders[reg]) || null;
+  }
+
+  /** 枠を既定で閉じる。開いたままにするのは**役割別の動き**と**観察ログ**だけ
+      ＝Yの用途が「見る＋書く」なので、この2つが最初から見えていれば手を動かさずに済む。
+      🔴**2026-09-24（§46）PCもスマホと同じ「既定は閉じる」にした**（Naoto）。
+         §35でスマホだけ閉じたが、そのあと枠が増え（S取り・バンク別）PCでも縦に長くなった
+         ＝いちばん使う観察ログが下へ押し出される。**どちらの画面でも開く枠は同じ2つ**にそろえる。
+         ⚠️だから名前も `mFold`（m＝mobile）から `defFold` に変えた
+           ＝名前が実態とずれたまま残ると、次に読む人が「スマホだけの話」と読む。
+      🔑呼び出し側で明示的に渡す＝`section()` の中でタイトルの文字列から判断すると、
+        タイトルを変えた日に黙って全部開く（文字列一致は静かに壊れる）。 */
+  function defFold() { return true; }
+
+  /** スマホ（1カラム）か＝§35。**表の形**と**折りたたみの既定**がこれで変わる。 */
+  function narrow() { return !!(window.MOBILE && MOBILE.isNarrow()); }
+
+  /** 集計期間の一言（例「数字は直近4ヶ月（2026/05/22〜2026/09/22）を数えたものです。」）。
+      🔑期間は stats.json 側が持つ＝`build_stats.js` の `WINDOW_MONTHS` を変えれば文言も追いつく。
+      古い stats.json（期間を持たない版）が配られても落ちないよう、無ければ何も出さない。 */
+  function windowText() {
+    if (statsAll && statsAll.missing) return 'この期間の集計はまだ公開されていません。';
+    var w = statsAll && statsAll.window;
+    if (!w || !w.months) return '';
+    // 12ヶ月はボタンの文言（1年）にそろえる＝「直近12ヶ月」と「1年」が同じものだと読めるように
+    var span = (+w.months === 12) ? '1年' : (w.months + 'ヶ月');
+    return '数字は直近' + span + '（' + w.from + '〜' + w.to + '）を数えたものです。';
+  }
+
+  /* ══════════ 集計期間の切り替え（2026-09-24 Naoto「4ヶ月・8ヶ月・1年で見られるように」・§41）══════════
+     🔑置き場所＝**役割別の動きの枠の中・いちばん上**（Naoto決定「役割別の見出しの行」）。
+        「いま何ヶ月の数字か」と「切り替え」が同じ場所にある。S取り・参考の見出しの文言も同じ選択に追従する。
+        ⚠️枠の見出し（.sec-head）は折りたたみの**ボタン**なので、その中にボタンは置けない＝本体の先頭に置く。
+     🔑選んだ期間は**このブラウザが覚える**（白背景と同じ・Naoto決定）。既定は4ヶ月。
+     🔴**既定を4ヶ月から動かさない**＝出走表の10列（逃・捲・差・マ…）は keirin.jp の「直近4ヶ月成績」
+        そのもので、こちらの切り替えでは**変わらない**。8ヶ月・1年にすると出走表と役割別の数字が
+        同じ期間でなくなる（§17で4ヶ月にした理由）。だから期間の文言は常に出す。
+     ⚠️切り替えると選手ページの「数えた数字」は全部変わる＝役割別の全表・S取り・落車欠場・並び実績。 */
+  var WIN_LS = CONFIG.LS_PREFIX + 'window';
+  var win = readWin();
+
+  function readWin() {
+    var v = '';
+    try { v = localStorage.getItem(WIN_LS) || ''; } catch (e) { /* プライベートモード等 */ }
+    return (CONFIG.STATS_URLS && CONFIG.STATS_URLS[v]) ? v : '4';
+  }
+
+  /** 期間の切り替えの行。**役割別とバンク別の本体の先頭**に置く（§44・2026-09-24 Naoto）。
+      🔑同じ行を2つ出すので、押したときは**画面に出ている行を全部**同じ状態にする（switchWin を参照）。
+         片方だけ「読み込み中…」になると、もう片方が古い選択のまま押せてしまう。 */
+  function winBar() {
+    var bar = el('div', 'win-bar');
+    bar.appendChild(el('span', 'win-k', '期間'));
+    (CONFIG.STATS_WINDOWS || []).forEach(function (w) {
+      var b = el('button', 'win-btn' + (w.k === win ? ' is-on' : ''), w.label);
+      b.type = 'button';
+      b.onclick = function () { switchWin(w.k); };
+      bar.appendChild(b);
+    });
+    var wd = statsAll && statsAll.window;
+    bar.appendChild(el('span', 'win-range', statsAll && statsAll.missing
+      ? 'この期間の集計はまだ公開されていません'
+      : (wd && wd.from ? wd.from + '〜' + wd.to : '')));
+    return bar;
+  }
+
+  /** 期間を切り替える＝その窓のファイルを読んで描き直す。
+      🔑描き直しても見ていた位置が飛ばないよう、スクロール位置を保って戻す
+         （切り替えの行はページの途中にあるので、先頭へ戻ると押した場所を見失う）。
+      ⚠️読んでいる間はボタンを押せなくする＝連打で古い応答が後から上書きするのを防ぐ。
+      🔴**画面に出ている切り替えの行を全部そろえる**（§44）＝役割別とバンク別の2か所に同じ行があるので、
+         押されたほうだけ「読み込み中…」にすると、**もう片方は古い選択のまま押せる**状態で残る。
+         ⇒ どの行から押しても見た目が1つに揃う（読み終われば render で作り直される）。 */
+  function switchWin(k) {
+    if (k === win) return;
+    win = k;
+    try { localStorage.setItem(WIN_LS, k); } catch (e) { /* 覚えられなくても動く */ }
+    Array.prototype.forEach.call(document.querySelectorAll('.win-bar'), function (bar) {
+      Array.prototype.forEach.call(bar.querySelectorAll('.win-btn'), function (b) {
+        b.disabled = true;
+        b.classList.toggle('is-on', b.textContent === labelOfWin(k));
+      });
+      var r = bar.querySelector('.win-range');
+      if (r) r.textContent = '読み込み中…';
+    });
+    var my = ++seq;
+    API.stats(k).then(function (s) {
+      if (seq !== my) return;          // その間に別の選手を開いた
+      statsAll = s || { riders: {} };
+      keepScroll(render);
+    });
+  }
+
+  function labelOfWin(k) {
+    var hit = (CONFIG.STATS_WINDOWS || []).filter(function (w) { return w.k === k; })[0];
+    return hit ? hit.label : '';
+  }
+
+  /** 描き直しの前後でスクロール位置を保つ。
+      🔴入れ物がPCとスマホで違う（§38と同じ）＝PCは `.col-right` の内部スクロール、スマホはページ全体。 */
+  function keepScroll(fn) {
+    var col = document.querySelector('.col-right');
+    var inner = !!(col && col.scrollHeight - col.clientHeight > 1);
+    var y = inner ? col.scrollTop : window.pageYOffset;
+    fn();
+    requestAnimationFrame(function () {
+      if (inner) col.scrollTop = y; else window.scrollTo(0, y);
+    });
+  }
+
+  /* ══════════ 描画 ══════════ */
+
+  function render() {
+    var box = document.getElementById('detail');
+    clear(box);
+    if (!cur || !cur.rider) { box.appendChild(el('div', 'empty', '選手が見つかりません。')); return; }
+    var r = cur.rider;
+
+    box.appendChild(head(r));
+    box.appendChild(basics(r));
+    box.appendChild(featureSection());
+    box.appendChild(rolesSection());
+    // ※レース種別は独立した枠をやめ、役割別の中（戦法別の下・ライン決着の上）へ入れた
+    //   （2026-09-23 Naoto「役割別の中に入れ込んでください」→ 同日「ライン決着の上に」）
+    box.appendChild(sSection());
+    box.appendChild(followSection());
+    box.appendChild(bankSection());
+    box.appendChild(obsSection());
+    box.appendChild(refSection(r));
+    box.appendChild(commentsSection());
+  }
+
+  /** skeleton=true は「読み込み中の仮の見出し」＝右側のボタン類は出さない */
+  function head(r, skeleton) {
+    var h = el('div', 'dt-head');
+    var left = el('div', 'dt-head-l');
+    var n = el('div', 'dt-name');
+    n.appendChild(el('span', 'dt-name-main', r.name || '（氏名未取得）'));
+    if (r.kana) n.appendChild(el('span', 'dt-name-kana', r.kana));
+    left.appendChild(n);
+
+    var tags = el('div', 'dt-tags');
+    if (r.kyuhan) tags.appendChild(el('span', 'tag tag-kyuhan', r.kyuhan));
+    if (r.origin) tags.appendChild(el('span', 'tag tag-' + (r.origin === '新人' ? 'new' : r.origin === '降班組' ? 'down' : 'stay'), r.origin));
+    if (r.pref) tags.appendChild(el('span', 'tag', r.pref + (r.area ? '・' + r.area : '')));
+    if (r.term) tags.appendChild(el('span', 'tag', r.term + '期'));
+    if (r.age) tags.appendChild(el('span', 'tag', r.age + '歳'));
+    if (r.kyaku) tags.appendChild(el('span', 'tag', r.kyaku));
+    if (r.score) tags.appendChild(el('span', 'tag tag-score', '得点 ' + r.score));
+    tags.appendChild(el('span', 'tag tag-reg', '登録 ' + r.reg));
+    left.appendChild(tags);
+    h.appendChild(left);
+    if (skeleton) return h;
+
+    // 段1（見るだけ）＝「公式データを更新」はシートを書き換えるので出さない。公式の取得日だけ出す
+    if (!CONFIG.CAN_WRITE) {
+      if (r.profAt) {
+        var ro = el('div', 'dt-head-r');
+        ro.appendChild(el('span', 'muted sm', String(r.profAt).indexOf('取得不可') === 0 ? r.profAt : '公式 ' + r.profAt));
+        h.appendChild(ro);
+      }
+      return h;
+    }
+
+    var right = el('div', 'dt-head-r');
+    var sync = el('button', 'btn btn-sm', '公式データを更新');
+    sync.type = 'button';
+    sync.onclick = function () {
+      sync.disabled = true;
+      sync.textContent = '取得中…';
+      API.syncProfile(r.reg).then(function (j) {
+        cur.rider = j.rider;
+        toast('公式データを更新しました');
+        render();
+        LIST.touch(r.reg, { name: j.rider.name, kana: j.rider.kana, kyuhan: j.rider.kyuhan, score: j.rider.score, origin: j.rider.origin, hasProf: true });
+      }).catch(function (e) {
+        toast(e.message, true);
+        sync.disabled = false;
+        sync.textContent = '公式データを更新';
+      });
+    };
+    right.appendChild(sync);
+    if (r.profAt) right.appendChild(el('span', 'muted sm', String(r.profAt).indexOf('取得不可') === 0 ? r.profAt : '公式 ' + r.profAt));
+    h.appendChild(right);
+    return h;
+  }
+
+  function basics(r) {
+    var s = section('基礎データ', '', defFold());
+    var g = el('div', 'kv');
+    var add = function (k, v) {
+      if (!v && v !== 0) return;
+      g.appendChild(el('span', 'kv-k', k));
+      g.appendChild(el('span', 'kv-v', v));
+    };
+    add('ホームバンク', r.home);
+    add('得意な周長', r.favLap);
+    add('得意な競輪場', r.favJo);
+    add('ニックネーム', r.nick);
+    add('身長・体重', [r.height, r.weight].filter(Boolean).join(' / '));
+    add('生年月日', r.birth);
+    add('級班所属日', r.kyuhanDate);
+    add('次期級班', r.nextKyuhan);
+    if (!g.childNodes.length) g.appendChild(el('span', 'muted', '公式プロフィールの取得待ちです（15分おきに自動で埋まります）'));
+    s.body.appendChild(g);
+    return s.root;
+  }
+
+  /* ── ③役割別 ── */
+
+  /** 役割は6つ全部を並べず、ボタンで選んだ1つだけ開く（9/23 Naoto指定）。
+      使い方が「今日この人は番手だから番手を見る」なので、全部出すと目的の1つを探すことになる。
+      ボタンには走数を出し、メモがある役割には印（右上の点）を付ける。 */
+  function rolesSection() {
+    // 🔑「いつからいつまでを数えた数字か」を必ず出す（9/23 Naoto指示で全期間→直近4ヶ月に変更）。
+    //   期間は stats.json が持っているので、集計側で期間を変えれば画面の文言も自動で追いつく
+    // 期間の文言は見出しから外し、本体の先頭の切り替えの行（winBar）に移した（2026-09-24 §41）
+    var s = section('役割別の動き', '見たい役割を押すと、その役割の成績とメモが出ます。');
+    var tabs = el('div', 'role-tabs');
+    var panel = el('div', 'role-panel');
+    s.body.appendChild(winBar());
+    s.body.appendChild(tabs);
+    s.body.appendChild(panel);
+    s.body.appendChild(saveBar());
+    paint();
+    return s.root;
+
+    function paint() {
+      var st = stats();
+      clear(tabs);
+      var key = keyRole(st);
+      CONFIG.ROLES.forEach(function (role) {
+        var rs = st && st.roles && st.roles[role.key];
+        // 点＝その役割に誰かのメモがある。先頭は画面に出している戦法ごとの3つを見る
+        //   （旧・先頭メモ noteHead は画面から外した列＝点だけ付いて中身が見えない形にしない）
+        var noteKeys = role.key === 'head' ? ['noteHead2', 'noteHead3', 'noteHeadSolo'] : ['note' + capKey(role.key)];
+        var hasNote = noteKeys.some(function (f) { return memoVals(f).length > 0; });
+        var b = el('button', 'role-tab' + (openRole === role.key ? ' is-on' : '') + (hasNote ? ' has-note' : '')
+          + (role.key === key ? ' is-key' : ''));
+        b.type = 'button';
+        b.title = role.hint + (hasNote ? '（メモあり）' : '');
+        b.appendChild(el('span', 'role-tab-label', role.label));
+        // 記録が無い役割は「—」（§50・Naoto）＝表の「記録が0のマス」と同じ印にそろえる
+        b.appendChild(el('span', 'role-tab-n', rs && rs.n ? rs.n + '走' : '—'));
+        b.onclick = function () {
+          openRole = (openRole === role.key) ? null : role.key;
+          paint();
+        };
+        tabs.appendChild(b);
+      });
+
+      clear(panel);
+      if (!openRole) {
+        panel.appendChild(el('div', 'muted sm', '上のボタンを押すと、その役割の成績とメモが出ます。点が付いている役割にはメモがあります。'));
+        return;
+      }
+      var role = null;
+      CONFIG.ROLES.forEach(function (r) { if (r.key === openRole) role = r; });
+      if (role) panel.appendChild(rolePanel(role, st));
+    }
+  }
+
+  function capKey(k) { return k.charAt(0).toUpperCase() + k.slice(1); }
+
+  /** 役割ボタンのうち白太字にする1つ（§50・2026-09-24 Naoto）。
+      ①出走表から開いた＝**今日の役割**（並びから決まる）
+      ②選手一覧から開いた・今日の役割が分からない（並び無し）＝**走数がいちばん多い役割**
+        （同数なら CONFIG.ROLES の順で先のもの。記録が1つも無ければ付けない）。
+      🔑「押している（青地）」とは別の印＝ほかの役割を押して見比べても、今日の役割がどれかは消えない。 */
+  function keyRole(st) {
+    if (ctx && ctx.role) return ctx.role;
+    var best = '', bestN = 0;
+    CONFIG.ROLES.forEach(function (r) {
+      var n = (st && st.roles && st.roles[r.key] && st.roles[r.key].n) || 0;
+      if (n > bestN) { best = r.key; bestN = n; }
+    });
+    return best;
+  }
+
+  function rolePanel(role, st) {
+    var card = el('div', 'role-body');
+    var rs = st && st.roles && st.roles[role.key];
+
+    var h = el('div', 'role-head');
+    h.appendChild(el('span', 'role-label', role.label));
+    h.appendChild(el('span', 'role-hint', role.hint));
+    card.appendChild(h);
+
+    if (rs && rs.n) {
+      var fig = el('div', 'role-figs');
+      // ①着順の段＝どの役割でも同じ
+      figure(fig, '1着', pct(rs.win, rs.n));
+      figure(fig, '2着内', pct(rs.top2, rs.n));
+      figure(fig, '3着内', pct(rs.top3, rs.n));
+      figure(fig, '4着内', pct(rs.top4, rs.n));
+      figure(fig, '走数', rs.n + '走');
+      card.appendChild(fig);
+
+      // ②着順の段＝1着〜9着の回数。決まり手の内訳はその着順の下にぶら下げる（9/23 Naoto指定）
+      // 🔑スマホは横に9列取れないので、**本体と戦法別を1つの縦表にまとめる**（§35-4 案A）
+      if (narrow()) {
+        card.appendChild(rankTableV(rs, role.key));
+      } else {
+        card.appendChild(rankTable(rs, role.key));
+        card.appendChild(splitRanks(rs, role.key));
+      }
+      /* 並び順＝着順 → 戦法別 → レース種別 → **グレード** → ライン決着
+         （2026-09-23 Naoto「レース種別をライン決着の上に」／2026-09-24「レース種別の下にグレード」）。
+         🔑1着〜9着の表（着順・戦法別・種別・グレード）を続けて置く
+            ＝列が同じ位置なので上から下へ縦に見比べられる。
+            ライン決着だけ列の意味が違う（車数）ので、いちばん下に離す。PCもスマホも同じ順 */
+      card.appendChild(typeRanks(rs, role.key));
+      card.appendChild(gradeRanks(rs, role.key));
+      card.appendChild(lineRow(role.key));
+    } else {
+      card.appendChild(el('div', 'muted sm', 'この役割で走った記録がまだありません。'));
+    }
+
+    // 🔑先頭だけメモを3つに分ける（9/23 Naoto指定）＝先行は戦法で全く別の走りになるため。
+    //   ほかの役割はこれまでどおり1つ。
+    if (role.key === 'head') {
+      [
+        { f: 'noteHead2', t: '二分戦の場合' },
+        { f: 'noteHead3', t: '三分戦以上の場合' },
+        { f: 'noteHeadSolo', t: '先行一車の場合' }
+      ].forEach(function (x) {
+        card.appendChild(el('div', 'lbl', x.t));
+        card.appendChild(noteField(x.f, x.t + 'の動きを書く', true));
+      });
+    } else {
+      card.appendChild(noteField('note' + capKey(role.key), role.label + 'のときの動きを書く', true));
+    }
+    return card;
+  }
+
+  /* ── メモ欄＝ふだんは全文を読むだけ。「編集」を押したその場で書ける ──
+     🔑1行の入力欄だと長い文の後ろが見えなくなる（9/22 Naoto指摘）。
+       読む回数のほうが多いので、既定を「読む」にして、書くときだけ開く。
+       書くときは高さが中身に合わせて伸びるので、ここでも文字が隠れない。 */
+  /** その欄に書かれている中身を、書いた人ごとに [{ by, val }]（空の人は入れない） */
+  function memoVals(field) {
+    return ((cur && cur.memos) || []).map(function (m) {
+      return { by: String(m.by || ''), val: String(m[field] == null ? '' : m[field]).trim() };
+    }).filter(function (x) { return x.val; });
+  }
+
+  /** 読むだけの欄（段1）＝書いた人ごとに名前を添えて全文を出す。だれも書いていなければ薄く「まだ書かれていません」 */
+  function noteRead(field, big) {
+    var wrap = el('div', 'note-reads');
+    var vals = memoVals(field);
+    if (!vals.length) {
+      wrap.appendChild(el('div', 'note-view is-empty', 'まだ書かれていません'));
+      return wrap;
+    }
+    vals.forEach(function (x) {
+      var one = el('div', 'note-read');
+      one.appendChild(el('div', 'note-by', x.by || '（書いた人不明）'));
+      one.appendChild(el('div', 'note-view' + (big ? ' is-big' : ''), x.val));
+      wrap.appendChild(one);
+    });
+    return wrap;
+  }
+
+  function noteField(field, placeholder, big) {
+    if (!CONFIG.CAN_WRITE) return noteRead(field, big);
+    var wrap = el('div', 'note-field');
+    paint();
+    return wrap;
+
+    function paint() {
+      clear(wrap);
+      var val = String(cur.memo[field] || '');
+
+      if (!editing[field]) {
+        wrap.appendChild(el('div', 'note-view' + (big ? ' is-big' : '') + (val ? '' : ' is-empty'), val || placeholder));
+        var b = el('button', 'note-edit', val ? '編集' : '書く');
+        b.type = 'button';
+        b.onclick = function () { editing[field] = true; paint(); };
+        wrap.appendChild(b);
+        return;
+      }
+
+      var ta = el('textarea', 'note-input' + (big ? ' is-big' : ''));
+      ta.rows = 1;
+      ta.placeholder = placeholder;
+      ta.value = val;
+      ta.oninput = function () { cur.memo[field] = ta.value; grow(ta); markDirty(); };
+      // Escで読むモードへ戻す（打ち間違えて開いたときのため）
+      ta.onkeydown = function (e) { if (e.key === 'Escape') { editing[field] = false; paint(); } };
+      wrap.appendChild(ta);
+
+      var done = el('button', 'note-edit is-done', '保存して閉じる');
+      done.type = 'button';
+      done.onclick = function () { editing[field] = false; paint(); saveMemo(false); };
+      wrap.appendChild(done);
+
+      grow(ta);
+      setTimeout(function () { grow(ta); }, 0);   // まだ画面に載っていないときの保険
+      ta.focus();
+      try { ta.setSelectionRange(val.length, val.length); } catch (e) {}
+    }
+  }
+
+  /** 中身の高さに合わせて伸ばす（縦スクロールを出さない） */
+  function grow(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = (ta.scrollHeight + 2) + 'px';
+  }
+
+  /* ── 開催日の3つの形（2026-09-23 Naoto）──────────────────────
+     保存＝`20260923`（今までどおり・GASもスプレッドシートも触らない）
+     入力＝`2026-09-23`（`input type="date"` の決まり。これ以外の形は**黙って空欄になる**）
+     表示＝`2026/9/23`（Naoto指定。`20260923` は読めない）
+     ⚠️どれか1つでも通し忘れると、入力欄が空で開くか、保存が消える。変換はこの3つの関数だけを通す。 */
+
+  /** `20260923` / `2026/09/23` → `2026-09-23`（input type=date が受け取れる形） */
+  function toDateInput(s) {
+    var m = /^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})$/.exec(String(s || '').trim());
+    return m ? (m[1] + '-' + m[2] + '-' + m[3]) : '';
+  }
+
+  /** `2026-09-23` → `20260923`（保存する形）。空欄はそのまま空欄 */
+  function fromDateInput(s) {
+    return String(s || '').replace(/-/g, '');
+  }
+
+  /** `20260923` / `2026-09-23` → `2026/9/23`（画面に出す形）。
+      ⚠️読めない値はそのまま返す＝手入力時代の値が消えない */
+  function fmtObsDate(s) {
+    var m = /^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})$/.exec(String(s || '').trim());
+    return m ? (m[1] + '/' + (+m[2]) + '/' + (+m[3])) : String(s || '');
+  }
+
+  /** 戦法別（二分戦／三分戦以上）。
+      🔑A級3班の全体で見ると番手は二分戦52.7%・三分戦以上38.3%（差14.4pt）＝効く軸。
+      🔑2026-09-23：本体と同じ「着順の表」で出す（Naoto「上の記載方法に合わせて」）。
+      ⚠️2026-09-23（第2版）Naoto「走数が少ない、的な注意書きは全部消して」＝
+         **走数による薄字も注意文も出さない**。走数は表の左上に必ず出ているので、
+         母数は読み手が見て判断できる。薄字に残したのは「記録が0のマス」だけ。 */
+  function splitRanks(rs, roleKey) {
+    var sp = rs.sp || {};
+    var defs = [{ k: '2', label: '二分戦' }, { k: '3', label: '三分戦以上' }];
+    if (!defs.some(function (d) { return sp[d.k] && sp[d.k].n; })) return el('div', '');
+
+    var today = (ctx && ctx.bunsen) || '';
+    var wrap = el('div', '');
+    wrap.appendChild(el('div', 'lbl', '戦法別'));
+    defs.forEach(function (d) {
+      var b = sp[d.k];
+      if (!(b && b.n)) return;
+      wrap.appendChild(rankTable(b, roleKey, {
+        label: d.label,
+        showN: true,
+        // 今日の戦法には印を付けて太字にする（種別の「◀ 今日」と同じ考え方）
+        cur: d.k === today,
+        /* 🔴今日でない戦法は**回数も内訳もグレー**（§47・2026-09-24 Naoto実機指摘）。
+           それまでは見出しだけ落として数字は白太字のままだった＝§33の決まり
+           （今日＝白太字／今日でない＝グレー）が戦法別にだけ効いていなかった。
+           今日が分からないとき（選手一覧から開いた）は落とさない。 */
+        off: !!today && d.k !== today
+      }));
+    });
+    // ※「走数が少ないので目安です」は廃止（2026-09-23 Naoto「注意書きは全部消して」）。
+    //   走数は表の左上に必ず出ているので、母数は見れば分かる
+    return wrap;
+  }
+
+  /** 着順ごとの回数の表（2026-09-23 Naoto指定）。
+      🔑上の段が「率」なので、ここは**回数だけ**にして実数で見られるようにする。
+         率だけだと「3.7%」が27走中1回なのか分からない。
+      🔑決まり手の内訳は**その着順の真下**に置く＝「1着12回のうち逃7・捲4」が縦に読める。
+         内訳はどれも着順が決まっている（逃/捲＝1着、番手に差されて2着＝2着、ズブズブ＝3着。
+         番手なら 差し1着＝1着、差し2着/マーク＝2着、ハコ3＝3着）。
+      ⚠️9着まで固定で出す＝7車立てでは8・9着が常に0になるが、列がずれないほうが読みやすい。
+         0は薄く（出走表の数字と同じ扱い）。 */
+  /** opts＝{ label, showN, thin, cur }
+      🔑2026-09-23（第2版）：**戦法別も同じ表で出す**（Naoto「上の記載方法に合わせて」）。
+         左上のマスを『着順』から『二分戦 12走』のように差し替えるだけで、
+         列（1着〜9着）は本体とまったく同じ＝上下に並べると縦に見比べられる。
+         走数を列に足さずラベルへ入れたのは、この「列を揃える」ためだけの理由。 */
+  function rankTable(rs, roleKey, opts) {
+    opts = opts || {};
+    var ranks = rs.ranks || [];
+    if (!ranks.length) return el('div', '');
+    var sub = rankSubs(roleKey, rs.detail || {});
+    var hasOther = (ranks[9] || 0) > 0;
+    var nCol = 9 + (hasOther ? 1 : 0);
+
+    var box = el('div', 'split rank');
+    // 列の型は種別の表と同じ1か所（rankCols）から＝縦に並べたとき、1着・2着…の列がぴたり重なる
+    box.style.gridTemplateColumns = rankCols(nCol);
+
+    // 🔑今日でない戦法は**タイトル（「二分戦」）もグレー**（§49・Naoto）＝is-strong を付けない（.split-label の既定がグレー）
+    var lab = el('div', 'split-label' + (opts.cur ? ' is-cur' : '') + (opts.label && !opts.off ? ' is-strong' : ''),
+      (opts.label || '着順') + (opts.cur ? ' ◀ 今日' : ''));
+    if (opts.showN) lab.appendChild(el('span', 'split-n', rs.n + '走'));
+    box.appendChild(lab);
+    for (var i = 0; i < 9; i++) box.appendChild(el('div', 'split-h', (i + 1) + '着'));
+    if (hasOther) box.appendChild(el('div', 'split-h', '他'));
+
+    var off = opts.off ? ' is-off' : '';
+    box.appendChild(el('div', 'split-k', '回数'));
+    for (var k = 0; k < 9; k++) {
+      var v = ranks[k] || 0;
+      box.appendChild(el('div', 'split-v' + off + (v ? '' : ' is-thin'), v ? v + '回' : '—'));
+    }
+    if (hasOther) box.appendChild(el('div', 'split-v' + off, ranks[9] + '回'));
+
+    if (sub.some(function (x) { return x && x.length; })) {
+      box.appendChild(el('div', 'split-k', '内訳'));
+      for (var m = 0; m < 9; m++) {
+        var cell = el('div', 'rank-sub' + off);
+        (sub[m] || []).forEach(function (x) {
+          var line = el('div', 'rank-sub-i' + (x.v ? '' : ' is-thin') + (x.sub ? ' is-note' : ''));
+          // 🔑列は52px固定（RANK_COL）＝長い注記は短い形で出し、全文はホバーの説明に残す（スマホと同じ扱い）
+          line.appendChild(el('span', 'rank-sub-k', x.short || x.label));
+          if (x.short) line.title = x.label + ' ' + x.v + '回';
+          line.appendChild(el('span', 'rank-sub-v', x.v + '回'));
+          cell.appendChild(line);
+        });
+        box.appendChild(cell);
+      }
+      if (hasOther) box.appendChild(el('div', 'rank-sub'));
+    }
+    return box;
+  }
+
+  /** 【スマホ】着順の表を**縦**にする（§35-4 案A・2026-09-23）。
+      PCは「横＝1着〜9着／縦＝全体・二分戦・三分戦以上」で表を3つ縦に並べる。
+      スマホは横に9列も取れないので **90度回して1つの表にまとめる**（縦＝着順／横＝戦法）。
+      🔑読み方は変わらない＝PCで覚えた「回数で見る・母数は走数で見る」がそのまま効く。
+      🔑**情報は1つも減らさない**（決まり手の内訳も走数も出す）＝
+         「4着以下をまとめる」案は**負け方が隠れる**ので採らなかった（検討メモ§4.1）。
+      ⚠️列幅は `minmax(0,1fr)` の均等割＝端末の幅に合わせて縮む。
+         固定pxにすると、いちばん狭い360pxで溢れる。 */
+  function rankTableV(rs, roleKey) {
+    var ranks = rs.ranks || [];
+    if (!ranks.length) return el('div', '');
+    var sp = rs.sp || {};
+    var today = (ctx && ctx.bunsen) || '';
+
+    var cols = [{ k: '', label: '全体', d: rs }];
+    [['2', '二分戦'], ['3', '三分戦以上']].forEach(function (p) {
+      var d = sp[p[0]];
+      if (d && d.n) cols.push({ k: p[0], label: p[1], d: d });
+    });
+
+    /* 出す着順＝どこかの列に記録がある最大着順まで。
+       ⚠️PCは9着まで固定（列がそろうほうが読みやすい）だが、縦型で9行固定にすると
+         7車立てでは常に空の行が2つ増えて縦に伸びるだけになる。 */
+    var maxRank = 0;
+    cols.forEach(function (c) {
+      (c.d.ranks || []).forEach(function (v, i) { if (v && i < 9) maxRank = Math.max(maxRank, i + 1); });
+    });
+    if (maxRank < 3) maxRank = 3;
+    var hasOther = cols.some(function (c) { return ((c.d.ranks || [])[9] || 0) > 0; });
+
+    var tmpl = 'repeat(' + cols.length + ', minmax(0, 1fr))';
+    var box = el('div', 'split rank rank-v');
+    box.style.gridTemplateColumns = '46px ' + tmpl;
+
+    box.appendChild(el('div', 'split-label is-strong', '着順'));
+    cols.forEach(function (c) {
+      var on = !!(c.k && c.k === today);
+      box.appendChild(el('div', 'split-h' + (on ? ' is-strong is-cur' : ''), c.label + (on ? ' ◀ 今日' : '')));
+    });
+
+    var subs = cols.map(function (c) { return rankSubs(roleKey, c.d.detail || {}); });
+
+    for (var i = 0; i < maxRank; i++) {
+      box.appendChild(el('div', 'split-k', (i + 1) + '着'));
+      cols.forEach(function (c) { box.appendChild(rankCellV(c, today, (c.d.ranks || [])[i] || 0)); });
+      // 決まり手の内訳＝その着順の**すぐ下**に、列の並びをそろえて小さく出す（PCと同じ考え方）
+      if (subs.some(function (s) { return s[i] && s[i].length; })) {
+        var sub = el('div', 'rank-v-sub');
+        sub.style.gridTemplateColumns = tmpl;
+        cols.forEach(function (c, ci) {
+          var cell = el('div', '');
+          (subs[ci][i] || []).forEach(function (x) {
+            // ⚠️「うち番手に差され」は縦型では長すぎる＝短くして、全文はホバーの説明に残す
+            var sp2 = el('span', 'rank-v-i' + (x.sub ? ' is-note' : ''), (x.sub ? '差され' : x.label) + x.v);
+            if (x.sub) sp2.title = 'うち番手に差され ' + x.v + '回';
+            cell.appendChild(sp2);
+          });
+          sub.appendChild(cell);
+        });
+        box.appendChild(sub);
+      }
+    }
+    if (hasOther) {
+      box.appendChild(el('div', 'split-k', '他'));
+      cols.forEach(function (c) { box.appendChild(rankCellV(c, today, (c.d.ranks || [])[9] || 0)); });
+    }
+    box.appendChild(el('div', 'split-k is-strong', '走数'));
+    cols.forEach(function (c) {
+      box.appendChild(el('div', 'split-v' + cellOffV(c, today), c.d.n + '走'));
+    });
+    return box;
+  }
+
+  function rankCellV(c, today, v) {
+    return el('div', 'split-v' + cellOffV(c, today) + (v ? '' : ' is-thin'), v ? v + '回' : '—');
+  }
+
+  /** 今日の戦法でない列は落とす（§33の決まり）。
+      ⚠️「全体」列（k が空）はいつも見る列なので落とさない＝ライン決着の「全体」行と同じ扱い。 */
+  function cellOffV(c, today) {
+    return (today && c.k && c.k !== today) ? ' is-off' : '';
+  }
+
+  /** 着順（1〜9着）ごとにぶら下げる内訳。配列の添字＝着順−1。
+      🔑2026-09-23（第2版・Naoto指摘）：**役割で項目を決め打ちしない**。
+         1着・2着とも「逃・捲・差・マ」のうち**実際に出たものだけ**を並べる。
+         🔴以前は先頭＝1着は逃・捲だけ／番手＝1着は差だけ、と決め打ちしていたので、
+            **先頭で差して1着（全体の9.8%）・番手で捲って1着が画面から消えていた**。
+            登録014578は先頭で1着2回とも「差」で、内訳が全部0に見えていた。
+         決まり手は排他なので **合計＝その着順の回数**＝上の段と足し算が合う（検算できる）。
+      ⚠️ここを変えたら build_stats.js の `addRun` も揃える（数える側と出す側は必ず対で直す）。 */
+  var KIM = [['nige', '逃'], ['makuri', '捲'], ['sashi', '差'], ['mark', 'マ']];
+
+  function rankSubs(roleKey, d) {
+    var s = [];
+    // 1着・2着＝決まり手のうち**実際に出たものだけ**。合計＝その着順の回数になる
+    [1, 2].forEach(function (rank) {
+      var arr = [];
+      KIM.forEach(function (k) {
+        var v = d[k[0] + rank] || 0;
+        if (v) arr.push({ label: k[1], v: v });
+      });
+      // 「うち番手に差され」は決まり手と**別の軸**で重なるので、点線の下に内数として添える。
+      // ⚠️全文（8文字）は 52px の列に入らず**その列だけ61pxに広がって隣の表と列がずれた**（2026-09-23 Naoto指摘）
+      //    ⇒ PCは `short`（説明書の用語表と同じ「番手に差され」）で出す。スマホは「差され」（rankTableV）
+      if (rank === 2 && roleKey === 'head' && d.sashed2) {
+        arr.push({ label: 'うち番手に差され', short: '番手に差され', v: d.sashed2, sub: true });
+      }
+      if (arr.length) s[rank - 1] = arr;
+    });
+    // 3着の下＝先頭はズブズブ・番手はハコ3（どちらもめったに出ないので、出たときだけ）
+    var third = [];
+    if (roleKey === 'head' && d.zubu) third.push({ label: 'ズブズブ', v: d.zubu });
+    if (roleKey === 'bante' && d.hako3) third.push({ label: 'ハコ3', v: d.hako3 });
+    if (third.length) s[2] = third;
+    return s;
+  }
+
+  /* ※旧 detailCols（戦法別を横1行の「率／回数」で出すための列定義）は廃止。
+        2026-09-23に戦法別も rankTable（着順の表＋内訳）へ寄せたので、
+        内訳の定義は rankSubs 1か所だけになった。 */
+
+  /** ライン決着（先頭・番手・3番手）。**自分のラインの車数ごとに条件が変わる**ので分けて出す。
+      2車＝1,2着が自分のライン／3車以上＝1〜3着が自分のライン（2026-09-23 Naoto定義）。
+      ⚠️戦法別（二分戦・三分戦）とは別の軸なので、あちらの表には入れない。 */
+  function lineRow(roleKey) {
+    var st = stats();
+    var lk = st && st.lineK && st.lineK[roleKey];
+    if (!lk) return el('div', '');
+    // 🔑横＝自分のラインの車数、縦＝戦法（9/23 Naoto指定で縦横を入れ替え）。
+    //   車数は「その選手が実際に組んだ車数」だけ列に出す＝空の列を作らない。
+    var cols = [{ k: '2', label: '2車ライン' }, { k: '3', label: '3車ライン' }, { k: '4', label: '4車以上' }]
+      .filter(function (df) { return lk[df.k] && lk[df.k].n; });
+    if (!cols.length) return el('div', '');
+
+    // 🔑率でなく回数で出す（9/23 Naoto指定）。ただし**分母が列ごとに違う**ので走数を必ず添える。
+    //   「3回」だけだと18走中なのか3走中なのか分からず、着順の表と違って上の段にも母数が無い。
+    var rows = [
+      { k: '', label: '全体', get: function (c) { return c; } },
+      { k: '2', label: '二分戦', get: function (c) { return (c.sp || {})['2']; } },
+      { k: '3', label: '三分戦以上', get: function (c) { return (c.sp || {})['3']; } }
+    ];
+    /* 🔑太字＝今日の並びに当たる列と行（2026-09-23 Naoto
+       「ライン決着・全体は太字。今回3車ラインの二分戦なので、その文字も太字に」）。
+       今日の車数・戦法は出走表から開いたときだけ分かる（ctx）。
+       ⚠️太字は「走数が少ない＝薄字」より強くする＝今日の欄が薄いと目で探せなくなるため。 */
+    var todaySize = (ctx && ctx.lineSize) ? String(ctx.lineSize >= 4 ? 4 : ctx.lineSize) : '';
+    var todayBun = (ctx && ctx.bunsen) || '';
+
+    var box = el('div', 'split');
+    /* ⚠️スマホはPCの寸法（96px＋96px×3＝約400px）では入らない。
+       ラベルを詰めて列は均等割にする（§35）＝端末の幅に合わせて縮む。 */
+    box.style.gridTemplateColumns = narrow()
+      ? '72px repeat(' + cols.length + ', minmax(0, 1fr))'
+      : LABEL_W + ' repeat(' + cols.length + ', minmax(96px, auto))';
+    box.appendChild(el('div', 'split-label is-strong', 'ライン決着'));
+    /* 🔑今日に当たる列と行には「◀ 今日」を出す（2026-09-23 Naoto 第3版）。
+       レース種別の表と同じ印＝**どこを見ればいいかを文字で言い切る**（太字や色の濃淡だけに頼らない）。
+       ⚠️「全体」行には付けない＝今日の戦法ではなく、いつも見る行だから。 */
+    cols.forEach(function (df) {
+      var on = (df.k === todaySize);
+      box.appendChild(el('div', 'split-h' + (on ? ' is-strong is-cur' : ''),
+        df.label + (on ? ' ◀ 今日' : '')));
+    });
+    rows.forEach(function (rw) {
+      var strongRow = (rw.k === '' || rw.k === todayBun);   // 「全体」は常に太字
+      var rowOn = (rw.k !== '' && rw.k === todayBun);
+      /* 🔑「◀ 今日」が付く見出しと行ラベルは**青**（2026-09-23 Naoto「他のところと合わせて青色に」）
+         ＝レース種別の表の「◀ 今日」と同じ色。
+         ⚠️**セル（数字）は青にしない**＝種別の表は行がまるごと今日だが、ここは列×行の2軸で、
+           行を青く塗ると「今日の列と交わるどのマスを見るのか」が分からなくなる。
+           交わるマスは白い太字、関係ないマスはグレーのまま（§31 第3版）。 */
+      box.appendChild(el('div', 'split-k' + (strongRow ? ' is-strong' : '') + (rowOn ? ' is-cur' : ''),
+        rw.label + (rowOn ? ' ◀ 今日' : '')));
+      cols.forEach(function (df) {
+        var b = rw.get(lk[df.k]);
+        // 薄字は「記録が無いマス」だけ＝走数の多い少ないでは薄くしない（9/23 Naoto）。
+        /* 🔴太字にするのは**今日の列と今日の行が交わるマスだけ**（2026-09-23 Naoto
+           「3車ラインと三分戦以上も太字になってる気がする」）。
+           ⚠️**列だけで決めていたのが原因**＝今日が2車ライン・二分戦でも
+             「三分戦以上×2車ライン」まで太字になっていた（西本1番車で14走のマスが目立っていた）。
+           🔑「全体」行はいつも見る行なので、今日の列との交点は太字のままにする。 */
+        var off = (todaySize && !(strongRow && df.k === todaySize)) ? ' is-off' : '';
+        var cell = el('div', 'split-v' + off + ((b && b.n) ? '' : ' is-thin'));
+        if (b && b.n) {
+          cell.appendChild(document.createTextNode(b.hit + '回'));
+          cell.appendChild(el('span', 'split-n', b.n + '走'));
+        } else cell.textContent = '—';
+        box.appendChild(cell);
+      });
+    });
+    /* ⚠️「太字＝今日の並び（◯車ライン・◯分戦）」の但し書きは**書かない**（2026-09-23 Naoto「いらない」）。
+       同じことが表の見出しと行ラベルの太字で見えているので、文字で繰り返す必要がない。 */
+    var note = el('div', 'split-note muted sm',
+      '2車＝1,2着／3車以上＝1〜3着が自分のライン。自分が何着かは問わない');
+    note.style.gridColumn = '1 / -1';
+    box.appendChild(note);
+    return box;
+  }
+
+  /* ── ④.3 レース種別／④.4 グレード（記念以上） ──────────────────────
+     どちらも「行＝区分／列＝1着〜9着の回数＋決まり手の内訳」で同じ形なので、
+     **1つの関数（catRanks）で作る**。§33で決めた「新しい表を足すときはこの表のとおりに作る」を
+     コードの側でも1か所にした＝表ごとに強調や列の型が散らばるのを止める。 */
+
+  /** レース種別ごとの着順。
+      🔑2026-09-23（第2版）Naoto「ノイズになっていいので、レース種別もそれぞれの役割の回数を」
+         ＝**開いている役割の中の種別**（`rs.byType`）。
+         1マスが数走しかないことはあるが、走数を種別名の右に必ず出しているので読み手に見えている。
+      ⚠️チャレンジ戦（A3）には特選・初特選が無く「選抜」がある＝無い種別の行は出さない。 */
+  function typeRanks(rs, roleKey) {
+    return catRanks({
+      boxes: rs && rs.byType,
+      order: (window.RACETYPE && RACETYPE.RACE_TYPES) || [],
+      roleKey: roleKey,
+      title: 'レース種別',
+      corner: '種別',
+      cur: (ctx && ctx.cls && window.RACETYPE) ? RACETYPE.raceTypeOf(ctx.cls) : ''
+    });
+  }
+
+  /** グレード（記念以上）の勝ち上がりごとの着順（2026-09-24 配信者Aの要望・§40）。
+      🔴**G1/G2/G3の区別は出せない**＝グレードそのものがデータに無い（`racetype.js` の説明）。
+         「一次予選がある開催＝記念以上」で絞ってまとめて数えている。
+      ⚠️**記念以上にA級は出ない**ので、A級の選手ではこの枠は見出しだけになる（表は出ない）。
+      ⚠️4段階の走数を足しても**その役割の走数にはならない**（記念以外の走が入らないため）。
+         行ごとに走数を出しているので、分母はそこを見る。 */
+  function gradeRanks(rs, roleKey) {
+    /* 今日の印＝出走表から開いていて、**その開催がグレードレース**のときだけ。
+       🔑グレードは出走表（keirin.jp の開催一覧）が持っている生の値（F1/F2/G3…）＝
+          過去ぶんは推測しているが、今日ぶんは公式の値をそのまま読める。 */
+    var isG = /^G/i.test(String((ctx && ctx.grade) || ''));
+    return catRanks({
+      boxes: rs && rs.byGrade,
+      order: (window.RACETYPE && RACETYPE.GRADE_STAGES) || [],
+      roleKey: roleKey,
+      title: 'グレード（記念以上）',
+      corner: '段階',
+      cornerDim: true,     // 「段階」はグレー（§49・Naoto）。種別の「種別」は白のまま
+      cur: (isG && ctx.cls && window.RACETYPE) ? (RACETYPE.gradeStageOf(ctx.cls) || '') : ''
+    });
+  }
+
+  /** 行＝区分／列＝1着〜9着 の表。レース種別とグレードで共用（2026-09-24）。
+      opts＝{ boxes:区分→箱, order:出す順, roleKey, title:枠の見出し, corner:左上のマス, cur:今日の区分 } */
+  function catRanks(opts) {
+    var bx = (opts.boxes) || {};
+    var cats = (opts.order || []).filter(function (t) { return bx[t] && bx[t].n; });
+    /* 🔑**1行も無いときは見出しごと出さない**（2026-09-24 Naoto「出走データがゼロなら
+       タイトルも表示させないでいい」）＝グレード（記念以上）はA級の選手では必ず空になるので、
+       見出しだけが残ると「あるはずのものが出ていない」と読めてしまう。
+       ⚠️レース種別は走れば必ずどれかに入るので空にならない（役割の箱があるときだけ呼ばれる）。 */
+    if (!cats.length) return el('div', '');
+    var wrap = el('div', '');
+    wrap.appendChild(el('div', 'lbl', opts.title));
+
+    var cur = opts.cur || '';
+    // 列は着順の表とそろえる。「他」は1つでも出た区分があれば全行に出す（列をずらさない）
+    var hasOther = cats.some(function (t) { return (bx[t].ranks || [])[9] > 0; });
+    /* 🔑スマホは「1着・2着・3着・4着以下」の4列にまとめる（§35-4）。
+       行が4〜7本あるので、着順まで9列出すとどう詰めても入らない。
+       ⚠️「4着以下」には**「他」も足す**＝どこにも数えられない走が黙って消えないように。 */
+    var nar = narrow();
+    var nCol = nar ? 4 : 9 + (hasOther ? 1 : 0);
+
+    /* 🔴PCの列の型は着順の表と**同じ1か所**（rankCols）から出す。
+       以前はこの表だけ `minmax(44px, auto)`＋`is-compact`（隙間12px）で、1着〜9着が上の表と
+       ずれていた（9着で99px・2026-09-23 Naoto指摘）。総幅は着順の表と同じなので入る幅も同じ。 */
+    var box = el('div', 'split rank');
+    box.style.gridTemplateColumns = nar
+      ? '72px repeat(4, minmax(0, 1fr))'
+      : rankCols(nCol);
+    box.appendChild(el('div', 'split-label' + (opts.cornerDim ? '' : ' is-strong'), opts.corner));
+    if (nar) {
+      ['1着', '2着', '3着', '4着以下'].forEach(function (t) { box.appendChild(el('div', 'split-h', t)); });
+    } else {
+      for (var i = 0; i < 9; i++) box.appendChild(el('div', 'split-h', (i + 1) + '着'));
+      if (hasOther) box.appendChild(el('div', 'split-h', '他'));
+    }
+
+    cats.forEach(function (t) {
+      var b = bx[t];
+      var isCur = (t === cur);
+      // 🔑今日の区分でない行は**太字にしない**（9/23 Naoto「関係ないやつは太字にしないで」）
+      var off = (cur && !isCur) ? ' is-off' : '';
+      var k = el('div', 'split-k' + (isCur ? ' is-cur' : ''), t + (isCur ? ' ◀ 今日' : ''));
+      k.appendChild(el('span', 'split-n', b.n + '走'));
+      box.appendChild(k);
+
+      /* 決まり手の内訳（2026-09-24 Naoto「着順みたいに決まりても書いてほしい」）。
+         🔑着順の表と**同じ rankSubs を通す**＝言葉も並びも必ず同じになる。
+            種別・グレードの箱は決まり手（逃捲差マ）しか持たないので、
+            「番手に差され」などの別の軸はここには出ない（集計側で持たせていない）。 */
+      var sub = rankSubs(opts.roleKey, b.detail || {});
+      var ranks = b.ranks || [];
+      var vals = [], subs = [];
+      if (nar) {
+        var rest = 0;
+        for (var q = 3; q < ranks.length; q++) rest += ranks[q] || 0;   // 4着以下＋「他」
+        vals = [ranks[0] || 0, ranks[1] || 0, ranks[2] || 0, rest];
+        subs = [sub[0], sub[1], sub[2], null];   // 4着以下はまとめた列＝内訳は出さない
+      } else {
+        for (var j = 0; j < nCol; j++) { vals.push(ranks[j] || 0); subs.push(sub[j]); }
+      }
+      /* 🔑**数字は青にしない＝白い太字のまま**（2026-09-23 Naoto「回数のところは青字ではなく白太字に」）。
+         青いのは行ラベルの「◀ 今日」だけ＝**印（青）が「どこを見るか」、白とグレーが「どのマスか」**。 */
+      vals.forEach(function (v, i2) { box.appendChild(catCell(v, subs[i2], off, nar)); });
+    });
+    wrap.appendChild(box);
+    return wrap;
+  }
+
+  /** 数字のマス＋その真下に決まり手の内訳。
+      🔑着順の表（rankTable）は内訳を専用の「内訳」行にまとめて出すが、こちらは**行ごとに区分が違う**
+         ので、内訳はその数字のすぐ下に入れる＝どの数字の内訳かが縦に読める。
+      ⚠️スマホは列が狭いので「逃2」の形に縮める（PCは「逃 2回」）。 */
+  function catCell(v, subList, off, nar) {
+    var cell = el('div', 'rank-cell');
+    cell.appendChild(el('div', 'split-v' + off + (v ? '' : ' is-thin'), v ? v + '回' : '—'));
+    if (subList && subList.length) {
+      // 🔴内訳にも今日でない印を渡す（§47）＝数字だけグレーにして内訳が白太字のまま残っていた
+      var s = el('div', (nar ? 'rank-cell-sub' : 'rank-sub') + off);
+      subList.forEach(function (x) {
+        if (nar) {
+          s.appendChild(el('span', 'rank-v-i', (x.short || x.label) + x.v));
+        } else {
+          var line = el('div', 'rank-sub-i');
+          line.appendChild(el('span', 'rank-sub-k', x.short || x.label));
+          line.appendChild(el('span', 'rank-sub-v', x.v + '回'));
+          s.appendChild(line);
+        }
+      });
+      cell.appendChild(s);
+    }
+    return cell;
+  }
+
+  function figure(box, label, val) {
+    var f = el('div', 'fig');
+    f.appendChild(el('span', 'fig-v', val));
+    f.appendChild(el('span', 'fig-k', label));
+    box.appendChild(f);
+  }
+
+  /* ── ③選手特徴 ── */
+
+  /** 🔑いちばん大事な手書き（Naoto「これが重要な情報になる」9/23）。
+      基礎データのすぐ下に単独で置き、幅いっぱいで書けるようにする。
+      以前は「特徴と追走能力」の右半分に押し込んでいて、書く場所が狭かった。 */
+  function featureSection() {
+    /* 🔑**書いてあれば開く・空なら閉じる**（§47・2026-09-24 Naoto）。
+       中身がある選手では、いちばん大事な手書きが最初から読める。空の選手では枠1つぶん短くなる。
+       ⚠️判定は開いた時点の中身だけ＝書いている途中で閉じたりはしない（描き直すのは選手を開いたときと期間の切り替え）。 */
+    var hasFeature = memoVals('feature').length > 0;
+    var s = section('選手特徴', '書いた人ごとに出ます。配信には出ません。', !hasFeature);
+    s.body.appendChild(noteField('feature', '事実と観察を書く。人の評価は書かない', true));
+    s.body.appendChild(saveBar());
+    return s.root;
+  }
+
+  /* ── ④.5 S取り（9/23 Naoto指定・役割別と追走能力の間） ── */
+
+  /** 「どの車番のときにSを取ったか」を出す。
+      🔑内枠ほど取りやすいので、**回数だけでなく車番の並びを見ないと意味がない**
+         （全体では1番3,795回に対し6番458回）。だから車番ごとに出す。 */
+  function sSection() {
+    var s = section('S取り', windowText(), defFold());
+    var st = stats();
+    var sk = st && st.sTaken;
+
+    if (sk && sk.n) {
+      var top = el('div', 'role-figs');
+      figure(top, 'S取り', sk.n + '回');
+      if (st.n) figure(top, '走数に対して', pct(sk.n, st.n));
+      s.body.appendChild(top);
+
+      var wrap = el('div', 'scar');
+      for (var car = 1; car <= 9; car++) {
+        var v = sk.byCar[car] || sk.byCar[String(car)] || 0;
+        var item = el('span', 'scar-i' + (v ? '' : ' is-zero'));
+        var chip = carChip(car);
+        item.appendChild(chip);
+        item.appendChild(el('span', 'scar-n', v ? v + '回' : '—'));
+        wrap.appendChild(item);
+      }
+      s.body.appendChild(wrap);
+    } else {
+      s.body.appendChild(el('div', 'muted sm', 'この期間にSを取った記録はありません。'));
+    }
+
+    s.body.appendChild(noteField('noteS', 'S取りについて書く（例：3番より内なら8割取りに行く）', true));
+    s.body.appendChild(saveBar());
+    return s.root;
+  }
+
+  /* ── ⑤追走能力 ── */
+
+  function followSection() {
+    var s = section('追走能力', '番手を回ったときの確かさ。配信には出ません。', defFold());
+    var wrap = el('div', 'follow');
+
+    // 段1（見るだけ）＝書いた人ごとの5段階を名前つきで並べる
+    if (!CONFIG.CAN_WRITE) {
+      var lv = memoVals('follow');
+      if (!lv.length) wrap.appendChild(el('div', 'note-view is-empty', 'まだ書かれていません'));
+      lv.forEach(function (x) {
+        var hit = CONFIG.FOLLOW_LEVELS.filter(function (l) { return l.v === x.val; })[0];
+        var one = el('div', 'follow-read');
+        one.appendChild(el('span', 'note-by', x.by || '（書いた人不明）'));
+        one.appendChild(el('span', 'follow-v', hit ? hit.label : x.val));
+        wrap.appendChild(one);
+      });
+      var stR = stats();
+      var bsR = stR && stR.roles && stR.roles.bante;
+      if (bsR && bsR.n) wrap.appendChild(el('div', 'muted sm', '参考：番手' + bsR.n + '走で3着内 ' + pct(bsR.top3, bsR.n)));
+      wrap.appendChild(el('div', 'lbl', 'そう判断した根拠'));
+      wrap.appendChild(noteField('followNote', ''));
+      s.body.appendChild(wrap);
+      return s.root;
+    }
+
+    var sel = el('select', 'sel');
+    var opt0 = el('option', '', '—');
+    opt0.value = '';
+    sel.appendChild(opt0);
+    CONFIG.FOLLOW_LEVELS.forEach(function (l) {
+      var o = el('option', '', l.label);
+      o.value = l.v;
+      if (String(cur.memo.follow) === l.v) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = function () { cur.memo.follow = sel.value; markDirty(); };
+    wrap.appendChild(sel);
+
+    var st = stats();
+    var bs = st && st.roles && st.roles.bante;
+    if (bs && bs.n) wrap.appendChild(el('div', 'muted sm', '参考：番手' + bs.n + '走で3着内 ' + pct(bs.top3, bs.n)));
+    wrap.appendChild(noteField('followNote', 'そう判断した根拠（例：9/12小倉7R 番手から離れた）'));
+
+    s.body.appendChild(wrap);
+    s.body.appendChild(saveBar());
+    return s.root;
+  }
+
+  /* ── ⑤.5 バンク別（§43・2026-09-24 配信者Aの要望③④／置き場所はNaoto指定＝追走能力と観察ログの間）──
+
+     🔑**この枠だけ数字が％**（ほかの表は回数）。理由は「何を読む表か」が違うから＝
+        着順の表は**1人の中での散らばり**を見る（だから回数）が、ここは**行どうしを比べる**
+        （軽い vs 重い／場と場）。9走の4回と15走の7回は、回数のままでは並べても比べられない。
+     🔑**％の真下に必ず回数を出す**（Naoto 2026-09-24）＝1場あたりの走数は中央値3走しかないので、
+        ％だけだと「66.7%」が3走中2回のことだと分からない。母数を消さずに比べられる形にした。
+        ⚠️走数が少ないことを**薄字では表さない**（§25で全廃したまま）。母数は回数の行で見せる。
+     🔑**役割では割らない**（S取りと同じ選手単位）＝実データで1場あたり中央値3走・
+        重いバンクは2割の選手が0走。6区分に割ると全部のマスが「—」になる。
+     🔑軽い／重い／その他の3行は**場別を足して作る**＝集計側は場別しか持たない（数を2回数えない）。
+     ⚠️配信者Aの要望⑤「バンク別の決まり手」はここには入れていない（2026-09-24 Naoto「決まり手の％は
+        さすがにいらない」）。入れるなら1着の下に逃捲差マをぶら下げる形で足せる。 */
+
+  /* 表の列の型は**この1か所**から出す（§36の教訓＝2つの表で列がずれない）。
+     🔴**左端の幅は「いちばん長い行ラベル」から決める**＝「いわき平 ◀ 今日」（83px）と
+        その下の「400m その他・3走」（79px）。スマホで最初 72px にしたら
+        **「小松島 ◀ 今日」が2行に折れた**（実機幅390pxで実測・2026-09-24）。
+        §36の「固定幅にするならはみ出す側を先に決める」がそのまま当てはまる。
+     ⚠️スマホは左端を広げたぶん数字の列が痩せるので、**この表だけ列の隙間も詰める**
+        （既定18px→10px）。詰めないと「100.0%」が入らない。
+        🔑隙間もここで一緒に決める＝CSSのメディアクエリに散らさない（§38＝画面幅でJSが分岐しない）。 */
+  var BANK_LABEL_W = '120px';   // 「いわき平 ◀ 今日」＋「400m 軽い・3走」が入る幅
+  var BANK_COL = '56px';        // 「33.3%」＋その下の「10回」が入る幅
+  function applyBankCols(box) {
+    var nar = narrow();
+    box.style.gridTemplateColumns = nar ? '92px repeat(4, minmax(0, 1fr))'
+                                        : BANK_LABEL_W + ' repeat(4, ' + BANK_COL + ')';
+    if (nar) box.style.columnGap = '10px';
+  }
+
+  /** stats.json の場別は場所を食わないよう配列で入っている＝ここで名前に戻す。
+      並びは build_stats.js の書き出しと同じ **[走数, 1着, 2着内, 3着内, 4着内]**。 */
+  function vbox(a) {
+    a = a || [];
+    return { n: a[0] || 0, win: a[1] || 0, top2: a[2] || 0, top3: a[3] || 0, top4: a[4] || 0 };
+  }
+
+  function bankSection() {
+    var st = stats();
+    var bvRaw = st && st.byVenue;
+    /* 🔑**中身が無いときは枠ごと出さない**（§40.1と同じ）。
+       古い stats.json（byVenue を持たない版）が配られても、見出しだけが残らない。 */
+    if (!bvRaw || !Object.keys(bvRaw).length) return el('div', '');
+
+    /* 🔑見出しの hint に期間を書かない＝**切り替えの行（winBar）が期間を出す**（§41と同じ分担）。
+       両方に出すと「直近4ヶ月」と「2025/09/22〜2026/09/22」が同時に見えて食い違って読める。
+       代わりに hint には**この枠だけ％であること**を書く（いちばん誤読しやすい点）。 */
+    var s = section('バンク別', '数字は％です。すぐ下の小さい数字が回数（母数）です。', defFold());
+    s.body.appendChild(winBar());
+    var laps = (statsAll && statsAll.venues) || {};
+    // 出走表から開いたときだけ「今日の場」が分かる（選手一覧から開いたときは空）
+    var curV = (ctx && ctx.jo && window.BANK) ? BANK.normalize(ctx.jo) : '';
+
+    var rows = Object.keys(bvRaw).map(function (name) {
+      return { name: name, b: vbox(bvRaw[name]), w: window.BANK ? BANK.weightOf(name) : 'other' };
+    });
+
+    s.body.appendChild(weightTable(rows, curV));
+    s.body.appendChild(venueTable(rows, curV, laps));
+    s.body.appendChild(el('div', 'muted sm',
+      '「軽い／重い」は配信チームの分類です。天候や季節では動かしていません（表に無い場は「その他」）。'));
+    return s.root;
+  }
+
+  /** ①軽い／重い／その他。3行は**走数が0でも必ず出す**＝「重いバンクは走っていない」も情報になる。 */
+  function weightTable(rows, curV) {
+    var wrap = el('div', '');
+    wrap.appendChild(el('div', 'lbl', '軽い・重い・その他'));
+
+    var sum = {};
+    (window.BANK ? BANK.WEIGHTS : []).forEach(function (w) { sum[w.key] = { n: 0, win: 0, top2: 0, top3: 0, top4: 0 }; });
+    rows.forEach(function (r) {
+      var t = sum[r.w];
+      if (!t) return;
+      t.n += r.b.n; t.win += r.b.win; t.top2 += r.b.top2; t.top3 += r.b.top3; t.top4 += r.b.top4;
+    });
+
+    var curW = curV && window.BANK ? BANK.weightOf(curV) : '';
+    var box = bankGrid('区分');
+    (window.BANK ? BANK.WEIGHTS : []).forEach(function (w) {
+      var t = sum[w.key];
+      var isCur = (w.key === curW);
+      box.appendChild(bankLabel(w.label, t.n + '走', isCur));
+      bankCells(box, t, (curW && !isCur) ? ' is-off' : '');
+    });
+    wrap.appendChild(box);
+    return wrap;
+  }
+
+  /** ②場別＝走った場を全部、走数の多い順（2026-09-24 Naoto決定）。
+      🔑「得意トップ3／苦手トップ3」は採らなかった＝1場あたり中央値3走で、実データでは
+         **88%の選手で「3着内率1位の場」が3走以下**になる。1回の着順で入れ替わる数字に
+         「得意」「苦手」という評価の言葉を付けると、Yの判断をこちらが固定してしまう。
+      🔴**今日の場に走った記録が無いときは 0走の行を足して出す**＝出走表から開いたのに
+         その場が一覧に無いと「出るはずのものが出ていない」と読める（データ無しと不具合の区別がつかない）。 */
+  function venueTable(rows, curV, laps) {
+    var list = rows.slice().sort(function (a, b) {
+      return b.b.n - a.b.n || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+    });
+    if (curV && !list.some(function (r) { return r.name === curV; })) {
+      list.unshift({ name: curV, b: vbox([]), w: window.BANK ? BANK.weightOf(curV) : 'other', none: true });
+    }
+
+    /* ⚠️2026-09-24（§46）＝**この表だけの折りたたみ（§45）は撤去した**（Naoto「なくして大丈夫」）。
+       同じ日に**枠そのものが既定で閉じる**ようになった（defFold）ので、
+       折りたたみが二重になり「開いたのにまた閉じている」と読める形だった。
+       🔑**入れ子の折りたたみは作らない**＝開く操作が2回要る時点で、畳んだ意味より迷いのほうが大きい。 */
+    var wrap = el('div', '');
+    wrap.appendChild(el('div', 'lbl', '場別（走数の多い順）' + list.length + '場'));
+    var box = bankGrid('場');
+    list.forEach(function (r) {
+      var isCur = (r.name === curV);
+      var lap = laps[r.name];
+      var meta = (lap ? lap + 'm ' : '') + (window.BANK ? BANK.weightLabel(r.w) : '')
+        + '・' + (r.none ? 'この期間は走っていません' : r.b.n + '走');
+      box.appendChild(bankLabel(r.name, meta, isCur));
+      bankCells(box, r.b, (curV && !isCur) ? ' is-off' : '');
+    });
+    wrap.appendChild(box);
+    return wrap;
+  }
+
+  /** 見出しの行まで作った空の表。列の型と見出しを2つの表で必ずそろえる */
+  function bankGrid(corner) {
+    var box = el('div', 'split bank');
+    applyBankCols(box);
+    box.appendChild(el('div', 'split-label is-strong', corner));
+    ['1着', '2着内', '3着内', '4着内'].forEach(function (t) { box.appendChild(el('div', 'split-h', t)); });
+    return box;
+  }
+
+  /** 行の左端＝1行目に名前（＋今日の印）、2行目に小さく周長・区分・走数。
+      🔑`is-cur`（青）は**行ラベルにだけ**付ける＝数字のマスには付けない（§33）。 */
+  function bankLabel(name, meta, isCur) {
+    var k = el('div', 'split-k' + (isCur ? ' is-cur' : ''));
+    k.appendChild(el('span', '', name + (isCur ? ' ◀ 今日' : '')));
+    k.appendChild(el('span', 'bank-meta', meta));
+    return k;
+  }
+
+  /** 1着・2着内・3着内・4着内の4マス。％の下に回数。
+      ⚠️0回は薄い「—」＝画面共通の決まり（回数が0のマスだけ薄くする）。 */
+  function bankCells(box, b, off) {
+    [b.win, b.top2, b.top3, b.top4].forEach(function (v) {
+      var cell = el('div', 'bank-cell');
+      cell.appendChild(el('div', 'split-v' + off + (v ? '' : ' is-thin'), v ? pct(v, b.n) : '—'));
+      if (v) cell.appendChild(el('div', 'bank-n', v + '回'));
+      box.appendChild(cell);
+    });
+  }
+
+  function saveBar() {
+    if (!CONFIG.CAN_WRITE) return el('div', '');   // 段1（見るだけ）＝保存の行は出さない
+    var bar = el('div', 'savebar');
+    var st = el('span', 'savestate');
+    st.dataset.role = 'savestate';
+    st.textContent = dirty ? '未保存' : '';
+    var b = el('button', 'btn btn-sm', '今すぐ保存');
+    b.type = 'button';
+    b.onclick = function () { saveMemo(false); };
+    bar.appendChild(st);
+    bar.appendChild(b);
+    return bar;
+  }
+
+  function setSaveState(t) {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-role="savestate"]'), function (n) { n.textContent = t; });
+  }
+
+  /** 何か書き換わった＝1.2秒止まったら勝手に保存する */
+  function markDirty() {
+    dirty = true;
+    changeSeq++;
+    setSaveState('未保存');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { saveMemo(true); }, 1200);
+  }
+
+  /** auto=true は自動保存（成功しても通知を出さない） */
+  function saveMemo(auto) {
+    clearTimeout(saveTimer);
+    if (!cur || !cur.rider) return;
+    if (auto && !dirty) return;
+    var reg = cur.rider.reg;
+    var at = changeSeq;                       // いまの内容の版
+    var mine = ++saveSeq;
+    setSaveState('保存中…');
+
+    API.saveMemo(reg, Object.assign({}, cur.memo)).then(function (j) {
+      if (mine !== saveSeq) return;           // もっと新しい保存が走っている
+      // ⚠️保存中に書き足したぶんを返事で上書きしない。時刻と書き手だけもらう
+      cur.memo.at = j.memo.at;
+      cur.memo.by = j.memo.by;
+      if (changeSeq === at) {
+        dirty = false;
+        setSaveState('保存しました');
+      } else {
+        setSaveState('未保存');               // 保存中にまた書いた＝次の自動保存に任せる
+      }
+      if (!auto) toast('保存しました');
+      LIST.touch(reg, { hasMemo: !!(String(cur.memo.feature || '').trim() || String(cur.memo.follow || '').trim()) });
+    }).catch(function (e) {
+      if (mine !== saveSeq) return;
+      setSaveState('保存できませんでした');
+      toast(e.message, true);
+    });
+  }
+
+  /** 別の選手へ移る・画面を閉じる前に、書きかけを取りこぼさない */
+  function flush() {
+    if (dirty) saveMemo(false);
+  }
+
+  /* ── ⑤観察ログ ── */
+
+  function obsSection() {
+    var s = section('観察ログ', CONFIG.CAN_WRITE
+      ? '1件ずつ積みます。上書きしません。「配信OK」を押したものだけが出力ビューに出ます。'
+      : '1件ずつ積んだ観察です（新しい順・右下が書いた人）。');
+    if (CONFIG.CAN_WRITE) s.body.appendChild(obsForm());
+    var list = el('div', 'obs-list');
+    (cur.obs || []).forEach(function (o) { list.appendChild(obsRow(o)); });
+    if (!cur.obs || !cur.obs.length) list.appendChild(el('div', 'muted sm', 'まだ観察はありません。'));
+    s.body.appendChild(list);
+    return s.root;
+  }
+
+  function obsForm() {
+    var f = el('div', 'obs-form');
+    var top = el('div', 'obs-form-top');
+    var roleSel = el('select', 'sel');
+    var o0 = el('option', '', '役割を選ぶ');
+    o0.value = '';
+    roleSel.appendChild(o0);
+    CONFIG.ROLES.forEach(function (r) {
+      var o = el('option', '', r.label);
+      o.value = r.key;
+      if (ctx && ctx.role === r.key) o.selected = true;
+      roleSel.appendChild(o);
+    });
+    top.appendChild(roleSel);
+
+    /* ── 場＝プルダウン（2026-09-23 Naoto）──
+       🔑**今日開催している場を上に固めて出す**＝観察はたいてい当日書くので、40場から探さずに済む。
+       ⚠️選択肢に無い値（過去に手入力したもの・新しい場）は先頭に足してから選ぶ＝黙って消えない。 */
+    var jo = el('select', 'sel sel-sm');
+    var cv = (ctx && ctx.jo) || '';
+    var j0 = el('option', '', '場を選ぶ');
+    j0.value = '';
+    jo.appendChild(j0);
+
+    var todays = (window.TODAY && TODAY.venueNames) ? TODAY.venueNames() : [];
+    var seen = {};
+    function joOpt(name, parent) {
+      if (!name || seen[name]) return;
+      seen[name] = 1;
+      var o = el('option', '', name);
+      o.value = name;
+      parent.appendChild(o);
+    }
+    if (cv && CONFIG.VENUES.indexOf(cv) < 0) joOpt(cv, jo);   // 一覧に無い既存値
+    if (todays.length) {
+      var g1 = el('optgroup');
+      g1.label = '今日開催';
+      todays.forEach(function (n) { joOpt(n, g1); });
+      if (g1.childNodes.length) jo.appendChild(g1);
+      var g2 = el('optgroup');
+      g2.label = 'そのほか';
+      CONFIG.VENUES.forEach(function (n) { joOpt(n, g2); });
+      if (g2.childNodes.length) jo.appendChild(g2);
+    } else {
+      CONFIG.VENUES.forEach(function (n) { joOpt(n, jo); });
+    }
+    jo.value = cv;
+    top.appendChild(jo);
+
+    /* ── 開催日＝カレンダーで選ぶ（2026-09-23 Naoto）──
+       🔴入れ物は `YYYY-MM-DD`（type=date の決まり）だが、**保存は今までどおり `YYYYMMDD`**。
+          GAS・スプレッドシート・既存の1件を一切触らずに済む。変換は toDateInput / fromDateInput の2か所だけ。 */
+    var rd = el('input', 'inp inp-date');
+    rd.type = 'date';
+    rd.value = toDateInput((ctx && ctx.raceDate) || '');
+    top.appendChild(rd);
+
+    var rn = el('input', 'inp inp-xs');
+    rn.type = 'number';
+    rn.placeholder = 'R';
+    rn.value = (ctx && ctx.raceNo) || '';
+    top.appendChild(rn);
+    f.appendChild(top);
+
+    // ⚠️ここは「これから書く」欄なので読むモードは付けない。
+    //   代わりに高さが中身に合わせて伸びる（1行の入力欄だと後ろが見えなくなるため）
+    var body = el('textarea', 'inp ta-grow');
+    body.rows = 1;
+    body.placeholder = '見たままを書く（例：番手から出ないで4着）';
+    body.oninput = function () { grow(body); };
+    f.appendChild(body);
+
+    var bar = el('div', 'obs-form-bar');
+    var pub = el('label', 'chk');
+    var pubIn = el('input');
+    pubIn.type = 'checkbox';
+    pub.appendChild(pubIn);
+    pub.appendChild(el('span', '', '配信OK（公開してよい書き方になっている）'));
+    bar.appendChild(pub);
+
+    var add = el('button', 'btn btn-primary btn-sm', '観察を追加');
+    add.type = 'button';
+    add.onclick = function () {
+      add.disabled = true;
+      API.addObs({
+        reg: cur.rider.reg, role: roleSel.value, body: body.value,
+        jo: jo.value, raceDate: fromDateInput(rd.value), raceNo: rn.value, pub: pubIn.checked ? 1 : ''
+      }).then(function (j) {
+        cur.obs = j.obs;
+        toast('追加しました');
+        render();
+        LIST.touch(cur.rider.reg, { obsN: (cur.obs || []).length });
+      }).catch(function (e) {
+        toast(e.message, true);
+        add.disabled = false;
+      });
+    };
+    bar.appendChild(add);
+    f.appendChild(bar);
+    return f;
+  }
+
+  function obsRow(o) {
+    var row = el('div', 'obs' + (o.pub ? ' is-pub' : ''));
+    var top = el('div', 'obs-top');
+    if (o.role) top.appendChild(el('span', 'tag tag-role', roleLabel(o.role)));
+    (o.tags || []).forEach(function (t) { top.appendChild(el('span', 'tag', t)); });
+    var where = [o.jo, fmtObsDate(o.raceDate), o.raceNo ? o.raceNo + 'R' : ''].filter(Boolean).join(' ');
+    if (where) top.appendChild(el('span', 'muted sm', where));
+    row.appendChild(top);
+
+    if (o.body) row.appendChild(el('div', 'obs-body', o.body));
+
+    var bar = el('div', 'obs-bar');
+    bar.appendChild(el('span', 'muted sm', o.at));
+    // 書いた人＝名前を必ず出す（Naoto「誰が書いたか区別できるように」）。段1は見るだけ＝配信OK・削除のボタンは出さない
+    if (!CONFIG.CAN_WRITE) {
+      if (o.pub) bar.appendChild(el('span', 'obs-pub', '配信OK'));
+      bar.appendChild(el('span', 'note-by', o.by || '（書いた人不明）'));
+      row.appendChild(bar);
+      return row;
+    }
+    bar.appendChild(el('span', 'muted sm', o.by));
+
+    var pub = el('button', 'btn btn-xs' + (o.pub ? ' is-on' : ''), o.pub ? '配信OK' : '配信OKにする');
+    pub.type = 'button';
+    pub.onclick = function () {
+      API.patchObs(o.id, { pub: o.pub ? '' : 1 }).then(function (j) {
+        cur.obs = j.obs;
+        render();
+      }).catch(function (e) { toast(e.message, true); });
+    };
+    bar.appendChild(pub);
+
+    var del = el('button', 'btn btn-xs btn-danger', '削除');
+    del.type = 'button';
+    del.onclick = function () {
+      if (!confirm('この観察を削除します。よろしいですか？')) return;
+      API.patchObs(o.id, { deleted: 1 }).then(function (j) {
+        cur.obs = j.obs;
+        toast('削除しました');
+        render();
+        LIST.touch(cur.rider.reg, { obsN: (cur.obs || []).length });
+      }).catch(function (e) { toast(e.message, true); });
+    };
+    bar.appendChild(del);
+    row.appendChild(bar);
+    return row;
+  }
+
+  /* ── ⑥参考 ── */
+
+  function refSection(r) {
+    // 並び実績・落車欠場も同じ期間を数えたもの（9/23 Naoto「他のデータも同様に」）
+    var s = section('参考', windowText(), true);
+    var st = stats();
+
+    if (st && st.lines && st.lines.length) {
+      s.body.appendChild(el('div', 'lbl', '並び実績（よく組む相手）'));
+      var lw = el('div', 'chips');
+      st.lines.slice(0, 10).forEach(function (l) {
+        lw.appendChild(el('span', 'tag', l.name + ' ' + l.n + '回' + (l.pos ? '（' + l.pos + '）' : '')));
+      });
+      s.body.appendChild(lw);
+    }
+    if (st && st.trouble && (st.trouble.fell || st.trouble.dq || st.trouble.absent)) {
+      s.body.appendChild(el('div', 'lbl', '落車・失格・欠場'));
+      s.body.appendChild(el('div', 'kv-line', '落車 ' + (st.trouble.fell || 0) + '回／失格 ' + (st.trouble.dq || 0) + '回／欠場 ' + (st.trouble.absent || 0) + '回' + (st.trouble.last ? '（直近 ' + st.trouble.last + '）' : '')));
+    }
+
+    if (r.kyuhanHist) {
+      s.body.appendChild(el('div', 'lbl', '級班の履歴'));
+      s.body.appendChild(pre(r.kyuhanHist));
+    }
+    if (r.plans) {
+      s.body.appendChild(el('div', 'lbl', '出場予定'));
+      s.body.appendChild(pre(r.plans));
+    }
+    var p = r.people || {};
+    var relMap = [['master', '師匠'], ['disciples', '弟子'], ['mates', '練習仲間'], ['friends', '友人'], ['grp', '練習グループ'], ['family', '縁故']];
+    var any = relMap.some(function (m) { return (p[m[0]] || []).length; });
+    if (any) {
+      s.body.appendChild(el('div', 'lbl', '人間関係（並び読みの材料）'));
+      var rw = el('div', 'rel');
+      relMap.forEach(function (m) {
+        var items = p[m[0]] || [];
+        if (!items.length) return;
+        var line = el('div', 'rel-line');
+        line.appendChild(el('span', 'rel-k', m[1]));
+        items.forEach(function (it) {
+          if (it.reg) {
+            var b = el('button', 'linkish', it.text);
+            b.type = 'button';
+            b.onclick = function () { open(it.reg); };
+            line.appendChild(b);
+          } else {
+            line.appendChild(el('span', 'rel-v', it.text));
+          }
+        });
+        rw.appendChild(line);
+      });
+      s.body.appendChild(rw);
+    }
+    if (r.schoolRank || r.school1) {
+      s.body.appendChild(el('div', 'lbl', '競輪学校'));
+      s.body.appendChild(el('div', 'kv-line',
+        [r.schoolExam ? '受験区分 ' + r.schoolExam : '', r.schoolRank ? '順位 ' + r.schoolRank : '',
+        (r.school1 !== '' ? '1着 ' + r.school1 + '／2着 ' + r.school2 + '／3着 ' + r.school3 + '／着外 ' + r.schoolOut : '')]
+          .filter(Boolean).join('・')));
+    }
+    if (!s.body.childNodes.length) s.body.appendChild(el('div', 'muted sm', '参考データがまだありません。'));
+    return s.root;
+  }
+
+  function pre(t) {
+    var p = el('div', 'pre');
+    String(t).split('\n').forEach(function (line) { p.appendChild(el('div', '', line)); });
+    return p;
+  }
+
+  /* ── ⑦本人コメント ── */
+
+  /** 本人コメントは開いたときだけ取りに行く（3,430行を毎回読まない＝詳細が速くなる） */
+  function commentsSection() {
+    var s = section('本人のレース後コメント', '内部限定。配信・note・SNSには出さないこと。開くと読み込みます。', true);
+    var reg = cur.rider.reg;
+    var fill = function (list) {
+      clear(s.body);
+      if (!list.length) { s.body.appendChild(el('div', 'muted sm', 'コメントはありません。')); return; }
+      list.forEach(function (c) {
+        var row = el('div', 'cmt');
+        row.appendChild(el('div', 'cmt-head', [c.date, c.jo, c.raceNo ? c.raceNo + 'R' : '', c.rank ? c.rank + '着' : '', c.kimarite].filter(Boolean).join(' ')));
+        row.appendChild(el('div', 'cmt-body', c.body));
+        s.body.appendChild(row);
+      });
+    };
+    if (cur.comments) { fill(cur.comments); return s.root; }
+
+    var loading = false;
+    // section() が先に折りたたみを切り替えるので、ここに来た時点で「開いた直後」かを見る
+    s.root.querySelector('.sec-head').addEventListener('click', function () {
+      if (loading || cur.comments || s.root.dataset.folded === '1') return;
+      loading = true;
+      clear(s.body);
+      s.body.appendChild(el('div', 'muted sm', '読み込み中…'));
+      API.comments(reg).then(function (j) {
+        cur.comments = j.comments || [];
+        fill(cur.comments);
+      }).catch(function (e) {
+        clear(s.body);
+        s.body.appendChild(el('div', 'muted sm', '読み込めませんでした：' + e.message));
+        loading = false;
+      });
+    });
+    return s.root;
+  }
+
+  /* ── 枠 ── */
+
+  function section(title, hint, folded) {
+    var root = el('section', 'sec');
+    var h = el('button', 'sec-head');
+    h.type = 'button';
+    h.appendChild(el('span', 'sec-title', title));
+    if (hint) h.appendChild(el('span', 'sec-hint', hint));
+    var body = el('div', 'sec-body');
+    if (folded) { root.dataset.folded = '1'; }
+    h.onclick = function () { root.dataset.folded = root.dataset.folded === '1' ? '' : '1'; };
+    root.appendChild(h);
+    root.appendChild(body);
+    return { root: root, body: body };
+  }
+
+  return { open: open, flush: flush, isDirty: function () { return dirty; } };
+})();
