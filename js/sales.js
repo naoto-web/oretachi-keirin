@@ -124,6 +124,11 @@ var SALES = (function () {
     var first = Object.keys(st.hits).filter(function (k) { return (st.hits[k] || []).length; }).sort()[0] === ym;
     return '・' + m + '/' + a + '〜' + m + '/' + b + (first && a > 1 ? '（予想データは' + m + '/' + a + 'から）' : '');
   }
+  // 購入者を数えた期間（例 10/1〜10/16）。途中の月は最終決済日まで・丸ごとの月は月末まで
+  function buyRange(ym) {
+    var m = +ym.slice(5), end = partialDay(ym) || u.daysIn(ym);
+    return m + '/1〜' + m + '/' + end;
+  }
   function pct1(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
   // 🆕10/1 Naoto「時間帯別の的中率・回収率」＝区分ごとに分けた成績の表（グレード・チャレンジ・ガールズもあとで同じ表に足す）
   //   keyOf(行)→区分の名前（null＝数えない）。order＝表の並び
@@ -411,8 +416,9 @@ var SALES = (function () {
       '<div class="s-k"><small>1記事あたり</small><b class="num">' + per(s.total, s.arts) + '</b><small>' + (s.arts ? (s.n / s.arts).toFixed(1) + '件/本' : '') + '</small>' + dl(p && s.arts && p.arts && delta(s.total / s.arts, p.total / p.arts, 'pct')) + '</div></div>' +
       hitCards(who) +
       // 購入者数（配信者には本人分だけ）
-      (st.all ? '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">買ってくれた人<small>人数だけ（名前は持っていません）</small></div>' +
-        (b ? '<div class="s-k"><small>購入者</small><b class="num">' + u.yen(b[2]) + '人</b><small>この月に買った人</small>' + (partialDay(st.ym) ? '<small>' + u.mdShort(st.asof) + 'まで</small>' : dl(bp && delta(b[2], bp[2], 'pct'))) + '</div>' +
+      (st.all ? '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">買ってくれた人<small>' + buyRange(st.ym) + '</small></div>' +
+        // 🔄10/16 Naoto：見出しの横を期間（例 10/1〜10/16）に＝購入者の下の「◯/◯まで」はやめた
+        (b ? '<div class="s-k"><small>購入者</small><b class="num">' + u.yen(b[2]) + '人</b><small>この月に買った人</small>' + (partialDay(st.ym) ? '' : dl(bp && delta(b[2], bp[2], 'pct'))) + '</div>' +
           '<div class="s-k"><small>新規</small><b class="num">' + (firstMonth ? '—' : u.yen(b[3]) + '人') + '</b><small>' + (firstMonth ? 'データの始まりの月' : 'はじめて買った人') + '</small>' + dl(bOk && delta(b[3], bp[3], 'pct')) + '</div>' +
           '<div class="s-k"><small>リピート客</small><b class="num">' + (firstMonth ? '—' : u.yen(b[4]) + '人') + '</b><small>' + (bp && !firstMonth ? '先月の' + u.yen(bp[2]) + '人のうち' + Math.round(rep) + '%' : '前の月も買った人') + '</small>' +
             (bOk && repPrev != null ? '<small class="s-dl">率の先月比 ' + delta(rep, repPrev, 'pt') + '</small>' : '') + '</div>' +
