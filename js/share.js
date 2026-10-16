@@ -137,19 +137,67 @@ var SHARE = (function () {
       (d.admin ? '<button type="button" class="link-btn sh-decnew" data-decide="">＋ 決定事項を直接書く</button>' : '') + '</div>';
   }
 
+  /* ── 書きかけを残す（10/16）──
+     読み込みが終わると画面を描き直す＝入力欄の中身が消えていた。data-draft の欄は打つたびに st.drafts に控え、描くときに戻す */
+  st.drafts = {};
+  function draftVal(key) { return u.esc(st.drafts[key] || ''); }
+
+  /* ── 要望・連絡のやりとり（10/16 Naoto「返事の上から返事すると最初の返事が消える＝追加にして・上書きは上書きでできるように」）──
+     ・返事は1件ずつ積む（古い返事は消えない）。自分の返事には［直す］＝その1件だけ上書き
+     ・返事の欄は複数行（旧＝ブラウザの1行の入力窓） */
+  function threadHtml(r) {
+    if (!r.thread || !r.thread.length) return '';
+    return '<ol class="sh-thread">' + r.thread.map(function (m) {
+      var ek = 'e:' + r.id + ':' + m.i;
+      var editing = st.editMsg === ek;
+      return '<li class="sh-msg' + (m.who === 'プログラマー' ? ' is-dev' : '') + '"><div class="sh-msg-head"><b>' + u.esc(m.who) + '</b><small>' + when(m.at) + (m.edited ? '（直しました）' : '') + '</small>' +
+        (m.mine && !editing ? '<button type="button" class="link-btn" data-medit="' + ek + '">直す</button>' : '') + '</div>' +
+        (editing
+          ? '<textarea class="date-input sh-ta" rows="4" maxlength="2000" data-draft="' + ek + '" id="sh-me-' + r.id + '-' + m.i + '">' + (st.drafts[ek] != null ? u.esc(st.drafts[ek]) : u.esc(m.text)) + '</textarea>' +
+            '<div class="sh-row"><button type="button" class="btn" data-msave="' + r.id + '" data-i="' + m.i + '"' + (st.busy ? ' disabled' : '') + '>上書きする</button><button type="button" class="link-btn" data-mcancel="1">やめる</button></div>'
+          : '<p>' + u.esc(m.text).replace(/\n/g, '<br>') + '</p>') + '</li>';
+    }).join('') + '</ol>';
+  }
+  function replyForm(r, d) {
+    if (!r.canReply) return '';
+    var k = 'r:' + r.id;
+    if (!st.replyOpen || !st.replyOpen[r.id]) return '<div class="sh-row"><button type="button" class="btn sh-replybtn" data-ropen="' + r.id + '">返事を書く</button></div>';
+    var hint = r.contact ? (r.mineBy ? '宛先の人に届きます' : 'プログラマーに届きます') : (r.mineBy ? 'プログラマーに届きます' : '出した人に届きます');
+    return '<textarea class="date-input sh-ta" rows="4" maxlength="2000" data-draft="' + k + '" id="sh-r-' + r.id + '" placeholder="返事（' + hint + '）">' + draftVal(k) + '</textarea>' +
+      '<div class="sh-row"><button type="button" class="btn" data-rsend="' + r.id + '"' + (st.busy ? ' disabled' : '') + '>返事を送る</button><button type="button" class="link-btn" data-rclose="' + r.id + '">やめる</button></div>';
+  }
+  function reqItem(r, d) {
+    var head = r.contact
+      ? '<span class="sh-st sh-st-dev">プログラマーから</span>' + (r.unread ? '<span class="sh-new-dot">返事待ち</span>' : '') + '<small>' + (d.admin || r.mineBy ? '宛先：' + u.esc(r.to) + '・' : '') + when(r.at) + '</small>'
+      : '<span class="sh-st sh-st-' + d.reqStates.indexOf(r.state) + '">' + u.esc(r.state) + '</span><small>' + (d.admin ? u.esc(r.who) + '・' : '') + when(r.at) + '</small>';
+    return '<li' + (r.unread ? ' class="is-unread"' : '') + '><div class="sh-reqhead">' + head + '</div>' +
+      '<p>' + u.esc(r.text).replace(/\n/g, '<br>') + '</p>' + threadHtml(r) + replyForm(r, d) +
+      (d.admin && !r.contact ? '<div class="sh-row"><span class="field-cap">状態</span><select class="date-input sh-rs" data-rid="' + r.id + '">' + d.reqStates.map(function (s) { return '<option' + (s === r.state ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>' : '') +
+      // 削除＝管理者は全部／配信者は自分が出した要望だけ
+      (!d.preview && (d.admin || r.mineBy) ? '<div class="sh-delrow"><button type="button" class="link-btn sh-del" data-del="request" data-id="' + r.id + '">削除</button></div>' : '') + '</li>';
+  }
+
+  // 🆕10/16 プログラマー→配信者への連絡（プログラマー＝GASの APP_SHARE_DEV の人だけ）と、届いた連絡の一覧
+  function contactsBox(d) {
+    var list = d.requests.filter(function (r) { return r.contact; });
+    if (!d.dev && !list.length) return '';
+    st.ctSel = st.ctSel || {};
+    var chip = function (n) { return '<label class="sh-chip"><input type="checkbox" name="sh-ct" value="' + u.esc(n) + '"' + (st.ctSel[n] ? ' checked' : '') + '><span>' + u.esc(n) + '</span></label>'; };
+    return '<div class="card sh-req sh-contact"><h3>プログラマーからの連絡</h3>' +
+      (d.dev && !d.preview ? '<div class="field-cap">宛先（1人ずつ別のやりとりになります）</div><div class="sh-chips">' +
+          d.people.members.concat(d.people.others).filter(function (n) { return n !== d.me; }).map(chip).join('') + '</div>' +
+        '<textarea class="date-input sh-ta" rows="4" maxlength="2000" data-draft="contact" id="sh-ct" placeholder="配信者への連絡（相手は返事を書けます）">' + draftVal('contact') + '</textarea>' +
+        '<div class="sh-row"><button type="button" class="btn" id="sh-ctsend"' + (st.busy ? ' disabled' : '') + '>連絡を送る</button></div>' : '') +
+      (list.length ? '<ul class="sh-reqlist">' + list.map(function (r) { return reqItem(r, d); }).join('') + '</ul>' : '<p class="sub">まだありません。</p>') + '</div>';
+  }
+
   function requestsBox(d) {
+    var list = d.requests.filter(function (r) { return !r.contact; });
     return '<div class="card sh-req"><h3>プログラマーへの要望</h3>' +
       // 🔄10/1 Naoto：例を3行で（&#10;＝入力欄の中の改行）
-      '<textarea id="sh-req" class="date-input sh-ta" rows="4" maxlength="2000" placeholder="例：&#10;追加してほしいアプリの機能（自分だけ追加でも可）&#10;追加してほしいOBSの機能・的中演出&#10;アプリやOBSの不具合等"></textarea>' +
+      '<textarea id="sh-req" class="date-input sh-ta" rows="4" maxlength="2000" data-draft="req" placeholder="例：&#10;追加してほしいアプリの機能（自分だけ追加でも可）&#10;追加してほしいOBSの機能・的中演出&#10;アプリやOBSの不具合等">' + draftVal('req') + '</textarea>' +
       '<div class="sh-row"><button type="button" class="btn" id="sh-reqsend"' + (st.busy ? ' disabled' : '') + '>要望を出す</button></div>' +
-      (d.requests.length ? '<ul class="sh-reqlist">' + d.requests.map(function (r) {
-        return '<li><div class="sh-reqhead"><span class="sh-st sh-st-' + d.reqStates.indexOf(r.state) + '">' + u.esc(r.state) + '</span><small>' + (d.admin ? u.esc(r.who) + '・' : '') + when(r.at) + '</small></div>' +
-          '<p>' + u.esc(r.text).replace(/\n/g, '<br>') + '</p>' + (r.reply ? '<p class="sh-reply">返事：' + u.esc(r.reply) + '</p>' : '') +
-          (d.admin ? '<div class="sh-row"><select class="date-input sh-rs" data-rid="' + r.id + '">' + d.reqStates.map(function (s) { return '<option' + (s === r.state ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select>' +
-            '<button type="button" class="link-btn" data-reply="' + r.id + '">返事を書く</button></div>' : '') +
-          // 🆕10/1 削除（配信者に返る要望は本人の分だけ＝出ているものは消してよい）
-          (!d.preview ? '<div class="sh-delrow"><button type="button" class="link-btn sh-del" data-del="request" data-id="' + r.id + '">削除</button></div>' : '') + '</li>';
-      }).join('') + '</ul>' : '') + '</div>';
+      (list.length ? '<ul class="sh-reqlist">' + list.map(function (r) { return reqItem(r, d); }).join('') + '</ul>' : '') + '</div>';
   }
 
   function draw() {
@@ -172,7 +220,7 @@ var SHARE = (function () {
       (todo.length ? '<div class="section-cap">回答してください（' + todo.length + '）</div>' + todo.map(function (p) { return postCard(p, d); }).join('') : '') +
       '<div class="section-cap">進行中</div>' + (rest.length ? rest.map(function (p) { return postCard(p, d); }).join('') : '<p class="sub">ありません。</p>') +
       (d.admin ? '<label class="sh-hidden-toggle"><input type="checkbox" id="sh-showhidden"' + (st.showHidden ? ' checked' : '') + '> 非表示にしたものも見る（管理者）</label>' : '') +
-      decisionsBox(d) + requestsBox(d);
+      contactsBox(d) + decisionsBox(d) + requestsBox(d);
     bind(el);
   }
 
@@ -221,18 +269,60 @@ var SHARE = (function () {
     el.querySelectorAll('[data-hdec]').forEach(function (b) {
       b.addEventListener('click', function () { send({ op: 'hideDecision', id: b.dataset.hdec, on: !!b.dataset.on }, '直しました'); });
     });
+    // 書きかけを控える（描き直しで消さない）
+    el.querySelectorAll('[data-draft]').forEach(function (t) {
+      t.addEventListener('input', function () { st.drafts[t.dataset.draft] = t.value; });
+    });
     on('#sh-reqsend', function () {
       var t = q('#sh-req').value;
-      send({ op: 'request', text: t }, '要望を出しました');
+      send({ op: 'request', text: t }, '要望を出しました').then(function (ok) { if (ok) { delete st.drafts.req; draw(); } });
     });
     el.querySelectorAll('.sh-rs').forEach(function (s) {
       s.addEventListener('change', function () { send({ op: 'reqState', id: s.dataset.rid, state: s.value }, '状態を変えました'); });
     });
-    el.querySelectorAll('[data-reply]').forEach(function (b) {
+    // 返事（10/16）：開く→複数行で書く→送る＝積む
+    st.replyOpen = st.replyOpen || {};
+    el.querySelectorAll('[data-ropen]').forEach(function (b) {
+      b.addEventListener('click', function () { st.replyOpen[b.dataset.ropen] = 1; draw(); var t = q('#sh-r-' + b.dataset.ropen); if (t) t.focus(); });
+    });
+    el.querySelectorAll('[data-rclose]').forEach(function (b) {
+      b.addEventListener('click', function () { delete st.replyOpen[b.dataset.rclose]; delete st.drafts['r:' + b.dataset.rclose]; draw(); });
+    });
+    el.querySelectorAll('[data-rsend]').forEach(function (b) {
       b.addEventListener('click', function () {
-        var t = window.prompt('要望への返事（出した人に見えます）');
-        if (t != null && t.trim()) send({ op: 'reqState', id: b.dataset.reply, reply: t }, '返事を書きました');
+        var id = b.dataset.rsend, t = q('#sh-r-' + id);
+        if (!t || !t.value.trim()) { APP.toast('返事を書いてください', true); return; }
+        send({ op: 'reqReply', id: id, text: t.value }, '返事を送りました').then(function (ok) {
+          if (ok) { delete st.replyOpen[id]; delete st.drafts['r:' + id]; draw(); }
+        });
       });
+    });
+    // 自分の返事を直す（その1件だけ上書き）
+    el.querySelectorAll('[data-medit]').forEach(function (b) {
+      b.addEventListener('click', function () { st.editMsg = b.dataset.medit; draw(); });
+    });
+    el.querySelectorAll('[data-mcancel]').forEach(function (b) {
+      b.addEventListener('click', function () { delete st.drafts[st.editMsg]; st.editMsg = ''; draw(); });
+    });
+    el.querySelectorAll('[data-msave]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.dataset.msave, i = b.dataset.i, t = q('#sh-me-' + id + '-' + i);
+        if (!t || !t.value.trim()) { APP.toast('中身が空です', true); return; }
+        send({ op: 'reqEdit', id: id, i: +i, text: t.value }, '上書きしました').then(function (ok) {
+          if (ok) { delete st.drafts[st.editMsg]; st.editMsg = ''; draw(); }
+        });
+      });
+    });
+    // プログラマー→配信者への連絡
+    on('#sh-ctsend', function () {
+      var targets = [].map.call(el.querySelectorAll('input[name="sh-ct"]:checked'), function (x) { return x.value; });
+      if (!targets.length) { APP.toast('宛先を選んでください', true); return; }
+      var t = q('#sh-ct').value;
+      if (!t.trim()) { APP.toast('連絡を書いてください', true); return; }
+      send({ op: 'contact', targets: targets, text: t }, '連絡を送りました').then(function (ok) { if (ok) { delete st.drafts.contact; st.ctSel = {}; draw(); } });
+    });
+    el.querySelectorAll('input[name="sh-ct"]').forEach(function (x) {
+      x.addEventListener('change', function () { if (x.checked) st.ctSel[x.value] = 1; else delete st.ctSel[x.value]; });
     });
     var sh = q('#sh-showhidden');
     if (sh) sh.addEventListener('change', function () { st.showHidden = sh.checked; draw(); });
