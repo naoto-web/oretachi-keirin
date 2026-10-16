@@ -1311,4 +1311,8 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .sh-replybtn { padding: 6px 14px; font-size: 13px; }
 .sh-st-dev { color: var(--accent); }
 .sh-new-dot { font-size: 11px; font-weight: 700; color: #fff; background: var(--ng); border-radius: 999px; padding: 0 8px; }
-.sh-reqlist li.is-unread { background: var(--ng-soft); border-radius: 8px; padding: 6px 8px; }
+.sh-reqlist li.is-unread { background: var(--ng-soft); border-radius: 8px; padding: 6px 8px; }/* 完了済み（10/16）＝本人が［確認した］を押したものは下で畳む */
+.sh-confirm { padding: 6px 14px; font-size: 13px; }
+.sh-pill-wait { font-size: 11px; font-weight: 700; color: var(--fg-dim); border: 1px dashed var(--line2); border-radius: 999px; padding: 0 8px; }
+.sh-donebtn { margin-top: 8px; background: none; border: 0; padding: 4px 0; font-size: 13px; font-weight: 700; color: var(--fg-dim); text-align: left; }
+.sh-donelist { opacity: .85; }
