@@ -1320,3 +1320,5 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .sm-sc { border: 0; background: var(--panel); padding: 5px 12px; font-size: 12px; font-weight: 700; color: var(--fg-dim); }
 .sm-sc + .sm-sc { border-left: 1px solid var(--line2); }
 .sm-sc.is-on { background: var(--accent); color: var(--on-accent); }
+/* 購入者の注意書き（10/16）＝2×2の下に横いっぱい */
+.s-k3-note { grid-column: 1 / -1; margin: 2px 0 0; }
