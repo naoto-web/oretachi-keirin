@@ -1301,3 +1301,14 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 /* 出走表の選手名＝押せる（選手タブを見てよい人だけ）。見た目は名前のまま・下に点線 */
 .rc-name-link { background: none; border: 0; padding: 0; font-weight: 700; text-align: left; color: inherit;
   text-decoration: underline dotted var(--line2); text-underline-offset: 3px; }
+/* ── 要望・連絡のやりとり（10/16）＝返事を1件ずつ積む・自分の返事は［直す］で上書き ── */
+.sh-thread { list-style: none; margin: 4px 0 2px; padding: 0 0 0 10px; border-left: 2px solid var(--line); display: grid; gap: 6px; }
+.sh-msg { display: grid; gap: 2px; }
+.sh-msg-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.sh-msg-head small { font-size: 11px; color: var(--fg-dim); }
+.sh-msg.is-dev .sh-msg-head b { color: var(--accent); }
+.sh-msg p { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.sh-replybtn { padding: 6px 14px; font-size: 13px; }
+.sh-st-dev { color: var(--accent); }
+.sh-new-dot { font-size: 11px; font-weight: 700; color: #fff; background: var(--ng); border-radius: 999px; padding: 0 8px; }
+.sh-reqlist li.is-unread { background: var(--ng-soft); border-radius: 8px; padding: 6px 8px; }
