@@ -122,7 +122,8 @@ var SALES = (function () {
     if (Math.abs(d) < (kind === 'pct' ? 0.5 : kind === 'pt' ? 0.05 : 1)) return '<span class="dl-flat">±0</span>';
     return '<span class="' + (d > 0 ? 'dl-up' : 'dl-down') + '">' + (d > 0 ? '▲' : '▼') + txt + '</span>';
   }
-  function deltaLabel() { return '先月同期比'; }   // 🔄10/16 Naoto「表記は先月同期比」（中身はペース比・注意書きは出さない）
+  // 🔄10/16 Naoto：表記は月の途中＝先月同期比／月末までそろった月＝先月比（中身はどちらもペース比・注意書きは出さない）
+  function deltaLabel(ym) { return partialDay(ym) ? '先月同期比' : '先月比'; }
 
   // ── 的中（9/30 Naoto①）＝配信コンソールの予想を配信画面と同じ判定にかけた数字。8/14〜 ──
   var H = { who: 0, day: 1, slot: 2, waku: 3, note: 4, settled: 5, hit: 6, inv: 7, ref: 8, g: 9, kind: 10 };   // 10/1〜 g＝グレード開催のレース／kind＝チャレンジ・ガールズ
@@ -272,7 +273,7 @@ var SALES = (function () {
           '<span class="num">' + (x.s.nd ? u.yen(x.s.total / x.s.nd) : '—') + (x.pc && x.pc.cur.nd ? dl(x.pc.cur.total / x.pc.cur.nd, x.pc.prev.total / x.pc.prev.nd) : '') + '</span></button>';
       }).join('') +
       '<div class="s-all-row is-sum"><span>合計</span><span class="num">' + u.yen(sum.total) + dl(tp && tp.total, tp && tp.expTotal) + '</span><span class="num">' + u.yen(sum.net) + dl(tp && tp.net, tp && tp.expNet) + '</span><span></span><span></span></div>' +
-      (hasPrev ? '<p class="fresh s-note">小さい数字＝先月同期比。出勤の昼/夜は両方出た日をそれぞれに数える</p>' : '') + '</div>' +
+      (hasPrev ? '<p class="fresh s-note">小さい数字＝' + deltaLabel(st.ym) + '。出勤の昼/夜は両方出た日をそれぞれに数える</p>' : '') + '</div>' +
       monthTable() +
       // 的中率・回収率・購入者（9/30）。全員の表は管理者の画面だけ
       (st.all ? '<div class="card s-all"><div class="s-all-head"><span></span><span>的中率</span><span>回収率</span><span>購入者</span><span>リピート</span></div>' +
@@ -384,9 +385,10 @@ var SALES = (function () {
   }
   function hitCards(who) {
     var hs = st.all ? hitStats(st.ym, who) : null;
-    // 予想データが月の途中まで（例：9/29まで）なら、先月もその日までで比べる
+    // 🔄10/16 Naoto：比べる相手は先月まるごと（割合なので出勤の多い少ないは関係ない・同じ日までだと月の前半は母数が少なくぶれる）
+    //   表記だけ、月の途中＝先月同期比／月末までそろった＝先月比（売上の欄とそろえる）
     var hPart = hs && hs.last < u.daysIn(st.ym);
-    var hp = hs && hitPrevYm(st.ym) ? hitStats(hitPrevYm(st.ym), who, hPart ? hs.last : undefined) : null;
+    var hp = hs && hitPrevYm(st.ym) ? hitStats(hitPrevYm(st.ym), who) : null;
     var dlH = function (html) { return html ? '<small class="s-dl">' + (hPart ? '先月同期比' : '先月比') + ' ' + html + '</small>' : ''; };
     return '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">予想の成績<small>配信コンソールの予想' + hitRangeLabel(st.ym) + '</small></div>' +
       (hs ? '<div class="s-k"><small>的中率</small><b class="num">' + pct1(hs.rate) + '</b><small>' + hs.hit + '/' + hs.settled + 'レース</small>' + dlH(hp && delta(hs.rate, hp.rate, 'pt')) + '</div>' +
@@ -431,7 +433,7 @@ var SALES = (function () {
     };
     // 🔄10/16 売上まわりは先月ペース比（paceOf）。購入者は人数なので先月比のまま（月が丸ごとそろったときだけ）
     var pc = st.all ? paceOf(who, st.ym, d.rows, shift) : null, pv = pc && pc.prev, cu = pc && pc.cur;
-    var dl = function (html) { return html ? '<small class="s-dl">' + deltaLabel() + ' ' + html + '</small>' : ''; };
+    var dl = function (html) { return html ? '<small class="s-dl">' + deltaLabel(st.ym) + ' ' + html + '</small>' : ''; };
     var dlb = function (html) { return html ? '<small class="s-dl">先月比 ' + html + '</small>' : ''; };
     var b = st.all ? buyerOf(who, st.ym) : null, bp = b && prevYm(st.ym) ? buyerOf(who, prevYm(st.ym)) : null;
     var firstMonth = Object.keys(st.all || {}).sort()[0] === st.ym;
