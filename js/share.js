@@ -166,12 +166,24 @@ var SHARE = (function () {
     return '<textarea class="date-input sh-ta" rows="4" maxlength="2000" data-draft="' + k + '" id="sh-r-' + r.id + '" placeholder="返事（' + hint + '）">' + draftVal(k) + '</textarea>' +
       '<div class="sh-row"><button type="button" class="btn" data-rsend="' + r.id + '"' + (st.busy ? ' disabled' : '') + '>返事を送る</button><button type="button" class="link-btn" data-rclose="' + r.id + '">やめる</button></div>';
   }
+  /* 🆕10/16 完了済み（Naoto「完了は完了済みリストに・画面はすっきり」）
+     ・完了済みに移る＝本人（要望を出した人・連絡の宛先）が返事を見て［確認した］を押したとき（連絡は宛先が返事を書いても）
+       ＝プログラマーが返事と同時に「完了」にしても、本人が読む前にしまわれない（Naotoの心配）
+     ・本人の画面＝「返事あり・確認してください」＋［確認した］／管理者の画面＝「本人未確認」
+     ・完了済みは各カードの下で畳む（押すと開く）。［戻す］で上に戻せる */
+  function confirmRow(r, d) {
+    if (d.preview) return '';
+    if (r.done) return (r.side || d.admin) ? '<div class="sh-row"><button type="button" class="link-btn" data-rconf="' + r.id + '" data-on="">上の一覧に戻す</button></div>' : '';
+    if (r.needConfirm && r.side) return '<div class="sh-row"><button type="button" class="btn sh-confirm" data-rconf="' + r.id + '" data-on="1">確認した（完了済みへ）</button></div>';
+    return '';
+  }
   function reqItem(r, d) {
+    var mark = r.needConfirm ? (r.side ? '<span class="sh-new-dot">' + (r.contact ? '確認してください' : '返事あり・確認してください') + '</span>' : '<span class="sh-pill-wait">本人未確認</span>') : '';
     var head = r.contact
-      ? '<span class="sh-st sh-st-dev">プログラマーから</span>' + (r.unread ? '<span class="sh-new-dot">返事待ち</span>' : '') + '<small>' + (d.admin || r.mineBy ? '宛先：' + u.esc(r.to) + '・' : '') + when(r.at) + '</small>'
-      : '<span class="sh-st sh-st-' + d.reqStates.indexOf(r.state) + '">' + u.esc(r.state) + '</span><small>' + (d.admin ? u.esc(r.who) + '・' : '') + when(r.at) + '</small>';
+      ? '<span class="sh-st sh-st-dev">プログラマーから</span>' + mark + '<small>' + (d.admin || r.mineBy ? '宛先：' + u.esc(r.to) + '・' : '') + when(r.at) + '</small>'
+      : '<span class="sh-st sh-st-' + d.reqStates.indexOf(r.state) + '">' + u.esc(r.state) + '</span>' + mark + '<small>' + (d.admin ? u.esc(r.who) + '・' : '') + when(r.at) + '</small>';
     return '<li' + (r.unread ? ' class="is-unread"' : '') + '><div class="sh-reqhead">' + head + '</div>' +
-      '<p>' + u.esc(r.text).replace(/\n/g, '<br>') + '</p>' + threadHtml(r) + replyForm(r, d) +
+      '<p>' + u.esc(r.text).replace(/\n/g, '<br>') + '</p>' + threadHtml(r) + confirmRow(r, d) + (r.done ? '' : replyForm(r, d)) +
       (d.admin && !r.contact ? '<div class="sh-row"><span class="field-cap">状態</span><select class="date-input sh-rs" data-rid="' + r.id + '">' + d.reqStates.map(function (s) { return '<option' + (s === r.state ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>' : '') +
       // 削除＝管理者は全部／配信者は自分が出した要望だけ
       (!d.preview && (d.admin || r.mineBy) ? '<div class="sh-delrow"><button type="button" class="link-btn sh-del" data-del="request" data-id="' + r.id + '">削除</button></div>' : '') + '</li>';
@@ -188,7 +200,17 @@ var SHARE = (function () {
           d.people.members.concat(d.people.others).filter(function (n) { return n !== d.me; }).map(chip).join('') + '</div>' +
         '<textarea class="date-input sh-ta" rows="4" maxlength="2000" data-draft="contact" id="sh-ct" placeholder="配信者への連絡（相手は返事を書けます）">' + draftVal('contact') + '</textarea>' +
         '<div class="sh-row"><button type="button" class="btn" id="sh-ctsend"' + (st.busy ? ' disabled' : '') + '>連絡を送る</button></div>' : '') +
-      (list.length ? '<ul class="sh-reqlist">' + list.map(function (r) { return reqItem(r, d); }).join('') + '</ul>' : '<p class="sub">まだありません。</p>') + '</div>';
+      reqLists(list, d, 'contact', 'まだありません。') + '</div>';
+  }
+
+  /** 進行中を上に・完了済みは畳んで下に（key＝カードごとの開け閉め） */
+  function reqLists(list, d, key, emptyMsg) {
+    var act = list.filter(function (r) { return !r.done; }), done = list.filter(function (r) { return r.done; });
+    st.doneOpen = st.doneOpen || {};
+    var open = !!st.doneOpen[key];
+    return (act.length ? '<ul class="sh-reqlist">' + act.map(function (r) { return reqItem(r, d); }).join('') + '</ul>' : (emptyMsg ? '<p class="sub">' + emptyMsg + '</p>' : '')) +
+      (done.length ? '<button type="button" class="sh-donebtn" data-dopen="' + key + '">' + (open ? '▾' : '▸') + ' 完了済み（' + done.length + '件）</button>' +
+        (open ? '<ul class="sh-reqlist sh-donelist">' + done.map(function (r) { return reqItem(r, d); }).join('') + '</ul>' : '') : '');
   }
 
   function requestsBox(d) {
@@ -197,7 +219,7 @@ var SHARE = (function () {
       // 🔄10/1 Naoto：例を3行で（&#10;＝入力欄の中の改行）
       '<textarea id="sh-req" class="date-input sh-ta" rows="4" maxlength="2000" data-draft="req" placeholder="例：&#10;追加してほしいアプリの機能（自分だけ追加でも可）&#10;追加してほしいOBSの機能・的中演出&#10;アプリやOBSの不具合等">' + draftVal('req') + '</textarea>' +
       '<div class="sh-row"><button type="button" class="btn" id="sh-reqsend"' + (st.busy ? ' disabled' : '') + '>要望を出す</button></div>' +
-      (list.length ? '<ul class="sh-reqlist">' + list.map(function (r) { return reqItem(r, d); }).join('') + '</ul>' : '') + '</div>';
+      reqLists(list, d, 'req', '') + '</div>';
   }
 
   function draw() {
@@ -311,6 +333,15 @@ var SHARE = (function () {
         send({ op: 'reqEdit', id: id, i: +i, text: t.value }, '上書きしました').then(function (ok) {
           if (ok) { delete st.drafts[st.editMsg]; st.editMsg = ''; draw(); }
         });
+      });
+    });
+    // 完了済みの開け閉め・［確認した］／［戻す］（10/16）
+    el.querySelectorAll('[data-dopen]').forEach(function (b) {
+      b.addEventListener('click', function () { st.doneOpen[b.dataset.dopen] = !st.doneOpen[b.dataset.dopen]; draw(); });
+    });
+    el.querySelectorAll('[data-rconf]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        send({ op: 'reqConfirm', id: b.dataset.rconf, on: !!b.dataset.on }, b.dataset.on ? '完了済みに移しました' : '上の一覧に戻しました');
       });
     });
     // プログラマー→配信者への連絡
