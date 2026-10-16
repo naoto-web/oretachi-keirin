@@ -1315,4 +1315,8 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .sh-confirm { padding: 6px 14px; font-size: 13px; }
 .sh-pill-wait { font-size: 11px; font-weight: 700; color: var(--fg-dim); border: 1px dashed var(--line2); border-radius: 999px; padding: 0 8px; }
 .sh-donebtn { margin-top: 8px; background: none; border: 0; padding: 4px 0; font-size: 13px; font-weight: 700; color: var(--fg-dim); text-align: left; }
-.sh-donelist { opacity: .85; }
+.sh-donelist { opacity: .85; }/* 全員の比較の目盛り切り替え（10/16）＝人ごと／全員そろえる */
+.sm-scale { display: inline-flex; border: 1px solid var(--line2); border-radius: 8px; overflow: hidden; margin-bottom: 4px; }
+.sm-sc { border: 0; background: var(--panel); padding: 5px 12px; font-size: 12px; font-weight: 700; color: var(--fg-dim); }
+.sm-sc + .sm-sc { border-left: 1px solid var(--line2); }
+.sm-sc.is-on { background: var(--accent); color: var(--on-accent); }
