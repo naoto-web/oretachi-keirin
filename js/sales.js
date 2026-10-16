@@ -248,7 +248,7 @@ var SALES = (function () {
         }).join('') + '<p class="fresh s-note">的中率・回収率＝配信コンソールの予想（8/14〜）。リピート＝先月買った人のうち今月も買った割合' +
         (partialDay(st.ym) ? '（今月は' + u.mdShort(st.asof) + 'までなので低めに出ます）' : '') + '</p></div>' : '') +
       // 全員の比較＝人ごとに1段ずつの小さなグラフ（同じ目盛り）。メンバーカラー6色は1枚に重ねると見分けにくい（赤⇔橙・黄⇔緑）ので段に分ける
-      '<div class="card ch-card"><div class="ch-title">全員の比較<small>月ごとの売上（手数料の前）・目盛りは全員同じ</small></div><div id="ch-all">' + (st.all ? '' : '<p class="sub">読み込み中…</p>') + '</div></div>';
+      '<div class="card ch-card"><div class="ch-title">全員の比較<small>月ごとの売上（手数料の前）</small></div><div id="ch-all">' + (st.all ? '' : '<p class="sub">読み込み中…</p>') + '</div></div>';
   }
 
   // ── グラフ（chart.js）。昼＝黄・夜＝藍（色の見分けは検査済み）・手数料＝灰 ──
@@ -305,7 +305,14 @@ var SALES = (function () {
     if (!st.all) { if (st.allErr) all.innerHTML = '<p class="sub">読み込めませんでした</p>'; else loadAll(); return; }
     var rowsBy = members().map(function (m) { return { m: m, tr: trend(m.name) }; }).filter(function (x) { return x.tr.some(function (t) { return t.s.total; }); });
     var max = Math.max.apply(null, rowsBy.map(function (x) { return Math.max.apply(null, x.tr.map(function (t) { return t.s.total; })); }).concat([0]));
-    all.innerHTML = rowsBy.map(function (x, i) {
+    // 🔄10/16 Naoto「目盛りが大きすぎて、売上の小さい人の増減が分かりづらい」
+    //   ＝既定は「人ごとの目盛り」（その人の増減が見える）。「全員そろえる」に切り替えると人どうしの大きさを比べられる（この端末が覚える）
+    var own = scaleMode() === 'own';
+    all.innerHTML = '<div class="sm-scale" role="group" aria-label="目盛り">' +
+        '<button type="button" class="sm-sc' + (own ? ' is-on' : '') + '" data-scale="own">目盛り：人ごと</button>' +
+        '<button type="button" class="sm-sc' + (own ? '' : ' is-on') + '" data-scale="same">全員そろえる</button></div>' +
+      '<p class="fresh">' + (own ? '人ごとに目盛りが違います（その人の増減を見る用）。人どうしの大きさは目盛りの数字か右上の金額で比べてください。' : '全員同じ目盛りです（人どうしの大きさを比べる用）。') + '</p>' +
+      rowsBy.map(function (x, i) {
       var last = x.tr[x.tr.length - 1];
       return '<div class="sm-row"><div class="sm-head"><span class="wa-who" style="--mc:' + colorOf(x.m.name) + '">' + u.esc(x.m.name) + '</span>' +
         '<small>' + monthTip(last.ym) + ' ' + yen(last.s.total) + '</small></div><div id="sm-' + i + '"></div></div>';
@@ -314,8 +321,20 @@ var SALES = (function () {
       CHART.columns(all.querySelector('#sm-' + i), x.tr.map(function (t) {
         return { tick: u.monthLabel(t.ym), segs: [{ v: t.s.total, color: colorOf(x.m.name) }],
           tip: '<b>' + u.esc(x.m.name) + ' ' + monthTip(t.ym) + '</b><br>売上 ' + yen(t.s.total) + '<br>出勤 ' + t.s.nd + '日' };
-      }), { h: 86, max: max, title: x.m.name + 'の月ごとの売上' });
+      }), { h: 86, max: own ? 0 : max, title: x.m.name + 'の月ごとの売上' });
     });
+    all.querySelectorAll('[data-scale]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        try { localStorage.setItem(SCALE_LS, b.dataset.scale); } catch (e) { /* 覚えられなくてもこの回は切り替える */ }
+        st.scale = b.dataset.scale;
+        var y = window.scrollY; draw(); window.scrollTo(0, y);   // 描き直しても見ていた位置のまま
+      });
+    });
+  }
+  var SCALE_LS = 'gakuya:sales:scale';
+  function scaleMode() {
+    if (st.scale) return st.scale;
+    try { return localStorage.getItem(SCALE_LS) || 'own'; } catch (e) { return 'own'; }
   }
 
   // 予想の成績（配信コンソールの予想・8/14〜）＝個人の画面と、売上がまだ無い月の画面（10/6）で使う
