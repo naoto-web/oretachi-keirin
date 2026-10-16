@@ -77,10 +77,47 @@ var SALES = (function () {
   function prevYm(ym) { var ks = Object.keys(st.all || {}).sort(), i = ks.indexOf(ym); return i > 0 ? ks[i - 1] : ''; }
   // 10/6 月末までそろった月（9/30まで等）は途中の月にしない＝「先月比」
   function partialDay(ym) { return st.asof && st.asof.slice(0, 7) === ym && +st.asof.slice(8) < u.daysIn(ym) ? +st.asof.slice(8) : 0; }
-  function prevStats(who, ym) {
-    var p = prevYm(ym);
-    if (!p) return null;
-    return stats(st.all[p], who, st.shift[p] || null, p, partialDay(ym) || undefined);
+  /* ── 先月ペース比（10/16 Naoto「先月の1日平均×今月の出勤で比べた方がよくない？」→ 月末の月も途中の月もこれだけ）──
+     ・物差し＝先月まるごとの「昼1出勤あたり」×今月の昼出勤日数＋「夜1出勤あたり」×今月の夜出勤日数
+       ＝今月の出勤のしかたで先月と同じペースだったら、ここまでにいくらか。前半・後半に出勤が偏っても比べられる
+       🔑昼・夜を分ける＝夜の方が売れるので、1日平均でまとめると「今月は夜が多い人」が上がって見える
+     ・今月が途中のとき＝最後の日（noteを書き出した日）は途中までしか入っていない＝その前日までで比べる
+     ・手取り＝物差しの売上×先月の手取りの割合／出勤日数＝先月の出勤日数×経過日数÷先月の日数／記事＝先月の1出勤あたりの本数×今月の出勤
+     ・1出勤あたり・1記事あたり＝先月まるごとの値と比べる
+     ⚠️グレード開催の多い少ないはそろえていない（先月にGが多いと今月が低めに出る） */
+  function cutDay(ym) { var p = partialDay(ym); return p ? p - 1 : 0; }
+  function paceOf(who, ym, rows, shift) {
+    var pym = prevYm(ym);
+    if (!pym || partialDay(ym) === 1) return null;
+    var prev = stats(st.all[pym], who, st.shift[pym] || null, pym);
+    if (!prev.nd || !prev.total) return null;
+    var cut = cutDay(ym);
+    var cur = stats(rows, who, shift, ym, cut || undefined);
+    var all = prev.total / prev.nd;
+    var rD = prev.nD ? prev.by['昼'] / prev.nD : all, rN = prev.nN ? prev.by['夜'] / prev.nN : all;
+    var expTotal = rD * cur.nD + rN * cur.nN;
+    var days = cut || u.daysIn(ym);
+    return { prev: prev, cur: cur, expTotal: expTotal, expNet: expTotal * prev.net / prev.total,
+             expNd: prev.nd * days / u.daysIn(pym), expArts: prev.arts / prev.nd * cur.nd };
+  }
+  // チーム計＝毎日どの枠も誰かが出ている＝出勤の偏りは無い。先月の1日あたり×今月の日数と比べる
+  function teamPace(ym, rows, shift) {
+    var pym = prevYm(ym);
+    if (!pym || partialDay(ym) === 1) return null;
+    var cut = cutDay(ym), days = cut || u.daysIn(ym), pd = u.daysIn(pym);
+    var t = { total: 0, net: 0, pt: 0, pn: 0 };
+    members().forEach(function (m) {
+      var c = stats(rows, m.name, shift, ym, cut || undefined), p = stats(st.all[pym], m.name, st.shift[pym] || null, pym);
+      t.total += c.total; t.net += c.net; t.pt += p.total; t.pn += p.net;
+    });
+    if (!t.pt) return null;
+    return { total: t.total, net: t.net, expTotal: t.pt / pd * days, expNet: t.pn / pd * days };
+  }
+  function paceNote(ym, team) {
+    var cut = cutDay(ym);
+    return '先月ペース比＝' + u.monthLabel(prevYm(ym)) + 'まるごとの昼・夜の1出勤あたりの売上×今月の昼・夜の出勤日数と比べた増減' +
+      (cut ? '（今月は' + +ym.slice(5) + '/' + cut + 'までで比べる・最後の日は途中のため）' : '') +
+      '。1出勤あたり・1記事あたりは' + u.monthLabel(prevYm(ym)) + 'まるごとと比べる。' + (team ? '合計は先月の1日あたり×日数と比べる。' : '') + 'グレード開催の多い少ないはそろえていません';
   }
   // 変化の札：▲▼＋数字（色は「上がる＝よい」前提で緑・赤。矢印があるので色だけに頼らない）
   function delta(cur, prev, kind) {
@@ -91,7 +128,7 @@ var SALES = (function () {
     if (Math.abs(d) < (kind === 'pct' ? 0.5 : kind === 'pt' ? 0.05 : 1)) return '<span class="dl-flat">±0</span>';
     return '<span class="' + (d > 0 ? 'dl-up' : 'dl-down') + '">' + (d > 0 ? '▲' : '▼') + txt + '</span>';
   }
-  function deltaLabel(ym) { return partialDay(ym) ? '先月同期比' : '先月比'; }
+  function deltaLabel() { return '先月ペース比'; }
 
   // ── 的中（9/30 Naoto①）＝配信コンソールの予想を配信画面と同じ判定にかけた数字。8/14〜 ──
   var H = { who: 0, day: 1, slot: 2, waku: 3, note: 4, settled: 5, hit: 6, inv: 7, ref: 8, g: 9, kind: 10 };   // 10/1〜 g＝グレード開催のレース／kind＝チャレンジ・ガールズ
@@ -226,8 +263,9 @@ var SALES = (function () {
 
   // 全員＝人ごとに1行（押すとその人）
   function allView(d, shift) {
-    var list = members().map(function (m) { return { m: m, s: stats(d.rows, m.name, shift, st.ym), p: st.all ? prevStats(m.name, st.ym) : null }; }).filter(function (x) { return x.s.arts || x.s.nd; });
-    var sum = list.reduce(function (a, x) { a.total += x.s.total; a.net += x.s.net; if (x.p) { a.pt += x.p.total; a.pn += x.p.net; } return a; }, { total: 0, net: 0, pt: 0, pn: 0 });
+    var list = members().map(function (m) { return { m: m, s: stats(d.rows, m.name, shift, st.ym), pc: st.all ? paceOf(m.name, st.ym, d.rows, shift) : null }; }).filter(function (x) { return x.s.arts || x.s.nd; });
+    var sum = list.reduce(function (a, x) { a.total += x.s.total; a.net += x.s.net; return a; }, { total: 0, net: 0 });
+    var tp = st.all ? teamPace(st.ym, d.rows, shift) : null;
     var hasPrev = !!(st.all && prevYm(st.ym));
     // 🆕10/1 Yへの半月報告（PDF）をアプリで置き換える準備＝PDFの「チーム全体」と同じ中身：前月比（途中の月は先月同期比）・出勤の昼夜の内訳・チーム計の前月比
     var dl = function (c, p) { return hasPrev && p ? '<small class="s-dl">' + (delta(c, p, 'pct') || '—') + '</small>' : ''; };
@@ -235,12 +273,12 @@ var SALES = (function () {
       list.map(function (x) {
         return '<button type="button" class="s-all-row" data-swho="' + u.esc(x.m.name) + '">' +
           '<span class="wa-who" style="--mc:' + colorOf(x.m.name) + '">' + u.esc(x.m.name) + '</span>' +
-          '<span class="num">' + u.yen(x.s.total) + dl(x.s.total, x.p && x.p.total) + '</span><span class="num">' + u.yen(x.s.net) + dl(x.s.net, x.p && x.p.net) + '</span>' +
+          '<span class="num">' + u.yen(x.s.total) + dl(x.pc && x.pc.cur.total, x.pc && x.pc.expTotal) + '</span><span class="num">' + u.yen(x.s.net) + dl(x.pc && x.pc.cur.net, x.pc && x.pc.expNet) + '</span>' +
           '<span class="num">' + x.s.nd + '日<small class="s-dl">' + (x.s.nD || x.s.nN ? '昼' + x.s.nD + '/夜' + x.s.nN : '') + '</small></span>' +
-          '<span class="num">' + (x.s.nd ? u.yen(x.s.total / x.s.nd) : '—') + (x.s.nd && x.p && x.p.nd ? dl(x.s.total / x.s.nd, x.p.total / x.p.nd) : '') + '</span></button>';
+          '<span class="num">' + (x.s.nd ? u.yen(x.s.total / x.s.nd) : '—') + (x.pc && x.pc.cur.nd ? dl(x.pc.cur.total / x.pc.cur.nd, x.pc.prev.total / x.pc.prev.nd) : '') + '</span></button>';
       }).join('') +
-      '<div class="s-all-row is-sum"><span>合計</span><span class="num">' + u.yen(sum.total) + dl(sum.total, sum.pt) + '</span><span class="num">' + u.yen(sum.net) + dl(sum.net, sum.pn) + '</span><span></span><span></span></div>' +
-      (hasPrev ? '<p class="fresh s-note">小さい数字＝' + deltaLabel(st.ym) + '（' + u.monthLabel(prevYm(st.ym)) + (partialDay(st.ym) ? 'の1〜' + partialDay(st.ym) + '日' : '') + 'と比べて）。出勤の昼/夜は両方出た日をそれぞれに数える</p>' : '') + '</div>' +
+      '<div class="s-all-row is-sum"><span>合計</span><span class="num">' + u.yen(sum.total) + dl(tp && tp.total, tp && tp.expTotal) + '</span><span class="num">' + u.yen(sum.net) + dl(tp && tp.net, tp && tp.expNet) + '</span><span></span><span></span></div>' +
+      (hasPrev ? '<p class="fresh s-note">小さい数字＝' + paceNote(st.ym, true) + '。出勤の昼/夜は両方出た日をそれぞれに数える</p>' : '') + '</div>' +
       monthTable() +
       // 的中率・回収率・購入者（9/30）。全員の表は管理者の画面だけ
       (st.all ? '<div class="card s-all"><div class="s-all-head"><span></span><span>的中率</span><span>回収率</span><span>購入者</span><span>リピート</span></div>' +
@@ -397,8 +435,10 @@ var SALES = (function () {
     var line = function (label, cls, v, n) {
       return '<div class="s-br"><span class="lg ' + cls + '">' + label + '</span><span class="num">' + yen(v) + '</span><span class="num">' + n + '日</span><span class="num">' + per(v, n) + '</span></div>';
     };
-    var p = st.all ? prevStats(who, st.ym) : null;
-    var dl = function (html) { return html ? '<small class="s-dl">' + deltaLabel(st.ym) + ' ' + html + '</small>' : ''; };
+    // 🔄10/16 売上まわりは先月ペース比（paceOf）。購入者は人数なので先月比のまま（月が丸ごとそろったときだけ）
+    var pc = st.all ? paceOf(who, st.ym, d.rows, shift) : null, pv = pc && pc.prev, cu = pc && pc.cur;
+    var dl = function (html) { return html ? '<small class="s-dl">' + deltaLabel() + ' ' + html + '</small>' : ''; };
+    var dlb = function (html) { return html ? '<small class="s-dl">先月比 ' + html + '</small>' : ''; };
     var b = st.all ? buyerOf(who, st.ym) : null, bp = b && prevYm(st.ym) ? buyerOf(who, prevYm(st.ym)) : null;
     var firstMonth = Object.keys(st.all || {}).sort()[0] === st.ym;
     // 購入者の前月比（9/30 Naoto「新規・リピート・ヘビーも前月比」）。月単位でしか数えていないので、途中までの月は比べない。
@@ -407,25 +447,26 @@ var SALES = (function () {
     var bpp = bOk && prevYm(prevYm(st.ym)) ? buyerOf(who, prevYm(prevYm(st.ym))) : null;
     var rep = b && bp ? b[4] / bp[2] * 100 : null, repPrev = bp && bpp ? bp[4] / bpp[2] * 100 : null;
     return '<div class="card s-kpi" style="--mc:' + colorOf(who) + '">' +
-      '<div class="s-k"><small>売上（手数料の前）</small><b class="num">' + yen(s.total) + '</b>' + (s.tip ? '<small>うちチップ ' + yen(s.tip) + '</small>' : '') + dl(p && delta(s.total, p.total, 'pct')) + '</div>' +
-      '<div class="s-k"><small>手取り（手数料の後）</small><b class="num">' + yen(s.net) + '</b><small>手数料 ' + yen(s.fee) + '</small>' + dl(p && delta(s.net, p.net, 'pct')) + '</div>' +
-      '<div class="s-k"><small>出勤日数</small><b class="num">' + s.nd + '日</b><small>昼' + s.nD + '・夜' + s.nN + '・G' + s.nG + '</small>' + dl(p && delta(s.nd, p.nd, 'day')) + '</div>' +
-      '<div class="s-k"><small>1出勤あたり</small><b class="num">' + per(s.total, s.nd) + '</b>' + dl(p && s.nd && p.nd && delta(s.total / s.nd, p.total / p.nd, 'pct')) + '</div>' +
+      '<div class="s-k"><small>売上（手数料の前）</small><b class="num">' + yen(s.total) + '</b>' + (s.tip ? '<small>うちチップ ' + yen(s.tip) + '</small>' : '') + dl(pc && delta(cu.total, pc.expTotal, 'pct')) + '</div>' +
+      '<div class="s-k"><small>手取り（手数料の後）</small><b class="num">' + yen(s.net) + '</b><small>手数料 ' + yen(s.fee) + '</small>' + dl(pc && delta(cu.net, pc.expNet, 'pct')) + '</div>' +
+      '<div class="s-k"><small>出勤日数</small><b class="num">' + s.nd + '日</b><small>昼' + s.nD + '・夜' + s.nN + '・G' + s.nG + '</small>' + dl(pc && delta(cu.nd, Math.round(pc.expNd), 'day')) + '</div>' +
+      '<div class="s-k"><small>1出勤あたり</small><b class="num">' + per(s.total, s.nd) + '</b>' + dl(pc && cu.nd && delta(cu.total / cu.nd, pv.total / pv.nd, 'pct')) + '</div>' +
       // 🔄10/1 Yの要望「1記事あたりの売上」＝売上（チップ込み）÷売れた記事の本数（0件の記事は明細に無い＝確認した範囲では出した記事とほぼ同じ）
-      '<div class="s-k"><small>記事</small><b class="num">' + u.yen(s.arts) + '本</b><small>' + u.yen(s.n) + '件売れた</small>' + dl(p && delta(s.arts, p.arts, 'pct')) + '</div>' +
-      '<div class="s-k"><small>1記事あたり</small><b class="num">' + per(s.total, s.arts) + '</b><small>' + (s.arts ? (s.n / s.arts).toFixed(1) + '件/本' : '') + '</small>' + dl(p && s.arts && p.arts && delta(s.total / s.arts, p.total / p.arts, 'pct')) + '</div></div>' +
+      '<div class="s-k"><small>記事</small><b class="num">' + u.yen(s.arts) + '本</b><small>' + u.yen(s.n) + '件売れた</small>' + dl(pc && delta(cu.arts, pc.expArts, 'pct')) + '</div>' +
+      '<div class="s-k"><small>1記事あたり</small><b class="num">' + per(s.total, s.arts) + '</b><small>' + (s.arts ? (s.n / s.arts).toFixed(1) + '件/本' : '') + '</small>' + dl(pc && cu.arts && pv.arts && delta(cu.total / cu.arts, pv.total / pv.arts, 'pct')) + '</div>' +
+      (pc ? '<p class="fresh s-k3-note">' + paceNote(st.ym) + '</p>' : '') + '</div>' +
       hitCards(who) +
       // 購入者数（配信者には本人分だけ）
       (st.all ? '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">買ってくれた人<small>' + buyRange(st.ym) + '</small></div>' +
         // 🔄10/16 Naoto：見出しの横を期間（例 10/1〜10/16）に＝購入者の下の「◯/◯まで」はやめた
-        (b ? '<div class="s-k"><small>購入者</small><b class="num">' + u.yen(b[2]) + '人</b><small>この月に買った人</small>' + (partialDay(st.ym) ? '' : dl(bp && delta(b[2], bp[2], 'pct'))) + '</div>' +
-          '<div class="s-k"><small>新規</small><b class="num">' + (firstMonth ? '—' : u.yen(b[3]) + '人') + '</b><small>' + (firstMonth ? 'データの始まりの月' : 'はじめて買った人') + '</small>' + dl(bOk && delta(b[3], bp[3], 'pct')) + '</div>' +
+        (b ? '<div class="s-k"><small>購入者</small><b class="num">' + u.yen(b[2]) + '人</b><small>この月に買った人</small>' + (partialDay(st.ym) ? '' : dlb(bp && delta(b[2], bp[2], 'pct'))) + '</div>' +
+          '<div class="s-k"><small>新規</small><b class="num">' + (firstMonth ? '—' : u.yen(b[3]) + '人') + '</b><small>' + (firstMonth ? 'データの始まりの月' : 'はじめて買った人') + '</small>' + dlb(bOk && delta(b[3], bp[3], 'pct')) + '</div>' +
           '<div class="s-k"><small>リピート客</small><b class="num">' + (firstMonth ? '—' : u.yen(b[4]) + '人') + '</b><small>' + (bp && !firstMonth ? '先月の' + u.yen(bp[2]) + '人のうち' + Math.round(rep) + '%' : '前の月も買った人') + '</small>' +
             (bOk && repPrev != null ? '<small class="s-dl">率の先月比 ' + delta(rep, repPrev, 'pt') + '</small>' : '') + '</div>' +
           // 🔄9/30 Naoto「ヘビーは太客の方がいい」
-          '<div class="s-k"><small>太客</small><b class="num">' + u.yen(b[5]) + '人</b><small>この月に10本以上</small>' + dl(bOk && delta(b[5], bp[5], 'pct')) + '</div>' +
+          '<div class="s-k"><small>太客</small><b class="num">' + u.yen(b[5]) + '人</b><small>この月に10本以上</small>' + dlb(bOk && delta(b[5], bp[5], 'pct')) + '</div>' +
           // 🆕10/16 Naoto「ゲスト購入件数はリピート客の下に」（2×2の次の段の左＝リピート客の真下）
-          (b[6] != null ? '<div class="s-k"><small>ゲスト購入</small><b class="num">' + u.yen(b[6]) + '件</b><small>ログインせずに買った分</small>' + dl(bOk && bp[6] != null && delta(b[6], bp[6], 'pct')) + '</div>' : '') +
+          (b[6] != null ? '<div class="s-k"><small>ゲスト購入</small><b class="num">' + u.yen(b[6]) + '件</b><small>ログインせずに買った分</small>' + dlb(bOk && bp[6] != null && delta(b[6], bp[6], 'pct')) + '</div>' : '') +
           '<p class="fresh s-k3-note">ゲスト購入（noteにログインせずに買ったもの）は誰が買ったか分からないため、購入者・新規・リピート客・太客の人数には含めていません。</p>'
           : '<p class="sub">この月の購入者データはありません</p>') + '</div>' : '') +
       '<div class="card s-brk"><div class="s-br s-br-head"><span></span><span>売上</span><span>出勤</span><span>1出勤あたり</span></div>' +
