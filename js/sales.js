@@ -246,7 +246,8 @@ var SALES = (function () {
             '<span class="num">' + (h ? pct1(h.rate) : '—') + '</span><span class="num">' + (h ? pct1(h.back) : '—') + '</span>' +
             '<span class="num">' + (b ? u.yen(b[2]) + '人' : '—') + '</span><span class="num">' + (b && bp ? Math.round(b[4] / bp[2] * 100) + '%' : '—') + '</span></button>';
         }).join('') + '<p class="fresh s-note">的中率・回収率＝配信コンソールの予想（8/14〜）。リピート＝先月買った人のうち今月も買った割合' +
-        (partialDay(st.ym) ? '（今月は' + u.mdShort(st.asof) + 'までなので低めに出ます）' : '') + '</p></div>' : '') +
+        (partialDay(st.ym) ? '（今月は' + u.mdShort(st.asof) + 'までなので低めに出ます）' : '') +
+        '。ゲスト購入（noteにログインせずに買ったもの）は誰が買ったか分からないため、購入者数に含めていません</p></div>' : '') +
       // 全員の比較＝人ごとに1段ずつの小さなグラフ（同じ目盛り）。メンバーカラー6色は1枚に重ねると見分けにくい（赤⇔橙・黄⇔緑）ので段に分ける
       '<div class="card ch-card"><div class="ch-title">全員の比較<small>月ごとの売上（手数料の前）</small></div><div id="ch-all">' + (st.all ? '' : '<p class="sub">読み込み中…</p>') + '</div></div>';
   }
@@ -416,7 +417,10 @@ var SALES = (function () {
           '<div class="s-k"><small>リピート客</small><b class="num">' + (firstMonth ? '—' : u.yen(b[4]) + '人') + '</b><small>' + (bp && !firstMonth ? '先月の' + u.yen(bp[2]) + '人のうち' + Math.round(rep) + '%' : '前の月も買った人') + '</small>' +
             (bOk && repPrev != null ? '<small class="s-dl">率の先月比 ' + delta(rep, repPrev, 'pt') + '</small>' : '') + '</div>' +
           // 🔄9/30 Naoto「ヘビーは太客の方がいい」
-          '<div class="s-k"><small>太客</small><b class="num">' + u.yen(b[5]) + '人</b><small>この月に10本以上</small>' + dl(bOk && delta(b[5], bp[5], 'pct')) + '</div>'
+          '<div class="s-k"><small>太客</small><b class="num">' + u.yen(b[5]) + '人</b><small>この月に10本以上</small>' + dl(bOk && delta(b[5], bp[5], 'pct')) + '</div>' +
+          // 🆕10/16 Naoto「ゲスト購入件数はリピート客の下に」（2×2の次の段の左＝リピート客の真下）
+          (b[6] != null ? '<div class="s-k"><small>ゲスト購入</small><b class="num">' + u.yen(b[6]) + '件</b><small>ログインせずに買った分</small>' + dl(bOk && bp[6] != null && delta(b[6], bp[6], 'pct')) + '</div>' : '') +
+          '<p class="fresh s-k3-note">ゲスト購入（noteにログインせずに買ったもの）は誰が買ったか分からないため、購入者・新規・リピート客・太客の人数には含めていません。</p>'
           : '<p class="sub">この月の購入者データはありません</p>') + '</div>' : '') +
       '<div class="card s-brk"><div class="s-br s-br-head"><span></span><span>売上</span><span>出勤</span><span>1出勤あたり</span></div>' +
       line('昼', 'lg-day', s.by['昼'], s.nD) + line('夜', 'lg-night', s.by['夜'], s.nN) + line('G', 'gb gb-day', s.by.G, s.nG) + '</div>' +
