@@ -113,12 +113,6 @@ var SALES = (function () {
     if (!t.pt) return null;
     return { total: t.total, net: t.net, expTotal: t.pt / pd * days, expNet: t.pn / pd * days };
   }
-  function paceNote(ym, team) {
-    var cut = cutDay(ym);
-    return '先月ペース比＝' + u.monthLabel(prevYm(ym)) + 'まるごとの昼・夜の1出勤あたりの売上×今月の昼・夜の出勤日数と比べた増減' +
-      (cut ? '（今月は' + +ym.slice(5) + '/' + cut + 'までで比べる・最後の日は途中のため）' : '') +
-      '。1出勤あたり・1記事あたりは' + u.monthLabel(prevYm(ym)) + 'まるごとと比べる。' + (team ? '合計は先月の1日あたり×日数と比べる。' : '') + 'グレード開催の多い少ないはそろえていません';
-  }
   // 変化の札：▲▼＋数字（色は「上がる＝よい」前提で緑・赤。矢印があるので色だけに頼らない）
   function delta(cur, prev, kind) {
     if (prev == null || cur == null || (kind !== 'day' && kind !== 'pt' && !prev)) return '';
@@ -128,7 +122,7 @@ var SALES = (function () {
     if (Math.abs(d) < (kind === 'pct' ? 0.5 : kind === 'pt' ? 0.05 : 1)) return '<span class="dl-flat">±0</span>';
     return '<span class="' + (d > 0 ? 'dl-up' : 'dl-down') + '">' + (d > 0 ? '▲' : '▼') + txt + '</span>';
   }
-  function deltaLabel() { return '先月ペース比'; }
+  function deltaLabel() { return '先月同期比'; }   // 🔄10/16 Naoto「表記は先月同期比」（中身はペース比・注意書きは出さない）
 
   // ── 的中（9/30 Naoto①）＝配信コンソールの予想を配信画面と同じ判定にかけた数字。8/14〜 ──
   var H = { who: 0, day: 1, slot: 2, waku: 3, note: 4, settled: 5, hit: 6, inv: 7, ref: 8, g: 9, kind: 10 };   // 10/1〜 g＝グレード開催のレース／kind＝チャレンジ・ガールズ
@@ -278,7 +272,7 @@ var SALES = (function () {
           '<span class="num">' + (x.s.nd ? u.yen(x.s.total / x.s.nd) : '—') + (x.pc && x.pc.cur.nd ? dl(x.pc.cur.total / x.pc.cur.nd, x.pc.prev.total / x.pc.prev.nd) : '') + '</span></button>';
       }).join('') +
       '<div class="s-all-row is-sum"><span>合計</span><span class="num">' + u.yen(sum.total) + dl(tp && tp.total, tp && tp.expTotal) + '</span><span class="num">' + u.yen(sum.net) + dl(tp && tp.net, tp && tp.expNet) + '</span><span></span><span></span></div>' +
-      (hasPrev ? '<p class="fresh s-note">小さい数字＝' + paceNote(st.ym, true) + '。出勤の昼/夜は両方出た日をそれぞれに数える</p>' : '') + '</div>' +
+      (hasPrev ? '<p class="fresh s-note">小さい数字＝先月同期比。出勤の昼/夜は両方出た日をそれぞれに数える</p>' : '') + '</div>' +
       monthTable() +
       // 的中率・回収率・購入者（9/30）。全員の表は管理者の画面だけ
       (st.all ? '<div class="card s-all"><div class="s-all-head"><span></span><span>的中率</span><span>回収率</span><span>購入者</span><span>リピート</span></div>' +
@@ -453,8 +447,7 @@ var SALES = (function () {
       '<div class="s-k"><small>1出勤あたり</small><b class="num">' + per(s.total, s.nd) + '</b>' + dl(pc && cu.nd && delta(cu.total / cu.nd, pv.total / pv.nd, 'pct')) + '</div>' +
       // 🔄10/1 Yの要望「1記事あたりの売上」＝売上（チップ込み）÷売れた記事の本数（0件の記事は明細に無い＝確認した範囲では出した記事とほぼ同じ）
       '<div class="s-k"><small>記事</small><b class="num">' + u.yen(s.arts) + '本</b><small>' + u.yen(s.n) + '件売れた</small>' + dl(pc && delta(cu.arts, pc.expArts, 'pct')) + '</div>' +
-      '<div class="s-k"><small>1記事あたり</small><b class="num">' + per(s.total, s.arts) + '</b><small>' + (s.arts ? (s.n / s.arts).toFixed(1) + '件/本' : '') + '</small>' + dl(pc && cu.arts && pv.arts && delta(cu.total / cu.arts, pv.total / pv.arts, 'pct')) + '</div>' +
-      (pc ? '<p class="fresh s-k3-note">' + paceNote(st.ym) + '</p>' : '') + '</div>' +
+      '<div class="s-k"><small>1記事あたり</small><b class="num">' + per(s.total, s.arts) + '</b><small>' + (s.arts ? (s.n / s.arts).toFixed(1) + '件/本' : '') + '</small>' + dl(pc && cu.arts && pv.arts && delta(cu.total / cu.arts, pv.total / pv.arts, 'pct')) + '</div>' + '</div>' +
       hitCards(who) +
       // 購入者数（配信者には本人分だけ）
       (st.all ? '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">買ってくれた人<small>' + buyRange(st.ym) + '</small></div>' +
