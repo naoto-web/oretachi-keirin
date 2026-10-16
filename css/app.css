@@ -1322,3 +1322,5 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .sm-sc.is-on { background: var(--accent); color: var(--on-accent); }
 /* 購入者の注意書き（10/16）＝2×2の下に横いっぱい */
 .s-k3-note { grid-column: 1 / -1; margin: 2px 0 0; }
+/* 数字のマスは上から詰める（10/16）＝隣のマスより行が少ないと、余った高さが行の間に配られて数字の高さがずれていた */
+.s-k { align-content: start; }
