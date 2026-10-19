@@ -1324,3 +1324,19 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .s-k3-note { grid-column: 1 / -1; margin: 2px 0 0; }
 /* 数字のマスは上から詰める（10/16）＝隣のマスより行が少ないと、余った高さが行の間に配られて数字の高さがずれていた */
 .s-k { align-content: start; }
+
+/* 予想の成績の表（10/19）＝横＝全体・ライブ・note／縦＝合計・レースの種類・時間帯。［回収率｜的中率］で切り替え */
+.s-hm { display: grid; gap: 4px; border-top: 2px solid var(--mc); }
+.s-hm-tab { justify-self: start; margin: 2px 0 4px; }
+.s-hm-row { display: grid; grid-template-columns: 76px repeat(3, minmax(0, 1fr)); align-items: start; gap: 6px; padding: 5px 0; border-top: 1px solid var(--line); }
+.s-hm-head { border-top: 0; padding: 0; font-size: 11px; font-weight: 700; color: var(--fg-dim); }
+.s-hm-head span:not(:first-child) { text-align: right; }
+.s-hm-k { font-size: 13px; font-weight: 700; padding-top: 2px; }
+.s-hm-v { display: grid; justify-items: end; gap: 0; }
+.s-hm-v b { font-size: 16px; line-height: 1.2; }
+.s-hm-v small { font-size: 10px; color: var(--fg-dim); line-height: 1.3; }
+.s-hm-v.is-none { color: var(--fg-faint); font-size: 13px; padding-top: 2px; }
+.s-hm-row.is-sum { border-top: 0; background: var(--accent-soft); border-radius: 8px; padding: 6px 6px; margin: 0 -6px; }
+.s-hm-row.is-sum .s-hm-v b { font-size: 18px; }
+.s-hm-row.is-empty .s-hm-k { color: var(--fg-faint); }
+.s-hm-cap { font-size: 11px; font-weight: 700; color: var(--fg-dim); margin-top: 8px; }
