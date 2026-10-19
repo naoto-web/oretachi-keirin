@@ -374,18 +374,16 @@ var SALES = (function () {
   }
   /* 🆕10/19 スランプグラフ（配信者Aの要望「回収率のスランプグラフ」）
      ・中身＝その日までの収支（回収−投資）の累計。全体・ライブ・note の3本。吹き出しにその日までの回収率も
-     ・期間＝［この月｜通算（8/14〜）］（端末が覚える）。1日1点（予想データは人×日×区分でまとまっているので1レースごとではない） */
-  var SLUMP_LS = 'gakuya:sales:slump';
+     ・期間＝［この月｜通算（8/14〜）］。1日1点（予想データは人×日×区分でまとまっているので1レースごとではない） */
   var SL_C = { all: '#23252a', live: '#0f7f87', note: '#c2410c' };
   function slumpMode() {
     if (st.slump) return st.slump;
-    try { return localStorage.getItem(SLUMP_LS) || 'month'; } catch (e) { return 'month'; }
+    return 'month';   // 🔄10/19 Naoto「デフォルトは日ごと・この月」＝端末に覚えない（開くたびにこの月から・開いている間の切り替えは st に保つ）
   }
-  // 🔄10/19 Naoto「累積だとショックを受けそう」→「両方出そう」＝［日ごと｜累計］・最初は日ごと（端末が覚える）
-  var SLV_LS = 'gakuya:sales:slumpview';
+  // 🔄10/19 Naoto「累積だとショックを受けそう」→「両方出そう」＝［日ごと｜累計］・開くたびに日ごと・この月から
   function slumpView() {
     if (st.slv) return st.slv;
-    try { return localStorage.getItem(SLV_LS) || 'day'; } catch (e) { return 'day'; }
+    return 'day';
   }
   function drawSlump(el) {
     var box = el.querySelector('#ch-slump');
@@ -615,14 +613,14 @@ var SALES = (function () {
     if (rl) rl.addEventListener('click', function () { if (st.loading) return; delete st.data[st.ym]; delete st.shift[st.ym]; st.all = null; st.allErr = false; load(st.ym); });
     el.querySelectorAll('[data-mt]').forEach(function (b) { b.addEventListener('click', function () { st.mtKind = b.dataset.mt; draw(); }); });
     el.querySelectorAll('[data-slv]').forEach(function (b) { b.addEventListener('click', function () {
-      st.slv = b.dataset.slv; try { localStorage.setItem(SLV_LS, st.slv); } catch (e) { /* 覚えられなくてもこの回は切り替える */ }
+      st.slv = b.dataset.slv;
       el.querySelectorAll('[data-slv]').forEach(function (x) { x.classList.toggle('is-on', x === b); });
       drawSlump(el);
     }); });
     el.querySelectorAll('[data-slump]').forEach(function (b) { b.addEventListener('click', function () {
-      st.slump = b.dataset.slump; try { localStorage.setItem(SLUMP_LS, st.slump); } catch (e) { /* 覚えられなくてもこの回は切り替える */ }
+      st.slump = b.dataset.slump;
       el.querySelectorAll('[data-slv]').forEach(function (b) { b.addEventListener('click', function () {
-      st.slv = b.dataset.slv; try { localStorage.setItem(SLV_LS, st.slv); } catch (e) { /* 覚えられなくてもこの回は切り替える */ }
+      st.slv = b.dataset.slv;
       el.querySelectorAll('[data-slv]').forEach(function (x) { x.classList.toggle('is-on', x === b); });
       drawSlump(el);
     }); });
