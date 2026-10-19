@@ -1341,3 +1341,10 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .s-hm-row.is-empty .s-hm-k { color: var(--fg-faint); }
 .s-hm-cap { font-size: 11px; font-weight: 700; color: var(--fg-dim); margin-top: 8px; }/* スランプグラフの切り替え2つを横に並べる（10/19） */
 .s-sl-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 実績タブの月の矢印（10/19）＝ロゴの行の下に貼り付く。top は sales.js が測って入れる */
+.s-pick-nav { position: sticky; z-index: 4; background: var(--bg); padding: 6px 0; margin: -6px 0 4px; align-items: center; }
+.s-ymnav { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; border: 1px solid var(--line2); border-radius: 10px; background: var(--panel); height: 40px; }
+.s-ymnav b { text-align: center; font-size: 16px; }
+.s-ymnav b small { font-size: 11px; font-weight: 400; color: var(--fg-dim); margin-right: 2px; }
+.s-ymgo { border: 0; background: none; font-size: 24px; line-height: 1; height: 100%; color: var(--accent); font-weight: 700; }
+.s-ymgo:disabled { color: var(--line2); cursor: default; }
