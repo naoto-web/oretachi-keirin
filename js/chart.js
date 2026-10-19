@@ -172,5 +172,38 @@ var CHART = (function () {
     bindTips(el.querySelector('.ch-box'));
   }
 
-  return { columns: columns, lines: lines, slump: slump, short: short };
+  /* 🆕10/19 日ごとの収支の棒（Naoto「累積だとショックを受けそう」）＝0の線から上（プラス・緑）／下（マイナス・赤）
+     labels＝x の目盛りの字（空なら出さない）／values＝日ごとの金額／opt.tips＝列ごとの吹き出しHTML */
+  var UP = '#16804a', DOWN = '#c62828';
+  function posneg(el, labels, values, opt) {
+    opt = opt || {};
+    var W = 340, H = opt.h || 170, L = 40, R = 6, T = 12, B = 18;
+    var lo = Math.min.apply(null, values.concat([0])), hi = Math.max.apply(null, values.concat([0]));
+    var span = Math.max(hi - lo, 1), raw = span / 4, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+    var step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+    var bot = Math.floor(lo / step) * step, top = Math.ceil(hi / step) * step;
+    if (top === bot) top = bot + step;
+    var tk = [];
+    for (var v = bot; v <= top + step * 0.001; v += step) tk.push(Math.round(v));
+    var pw = W - L - R, ph = H - T - B, n = Math.max(values.length, 1), band = pw / n, bw = Math.max(1.5, Math.min(14, band * 0.66));
+    var y = function (v) { return T + ph - (v - bot) / (top - bot) * ph; };
+    var sgn = function (v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + short(Math.abs(v)); };
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + u.esc(opt.title || '') + '">';
+    tk.forEach(function (t) {
+      s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(t) + '" y2="' + y(t) + '" stroke="' + GRID + '" stroke-width="1"/>' +
+        '<text x="' + (L - 4) + '" y="' + (y(t) + 3) + '" text-anchor="end" font-size="9" fill="' + INK2 + '">' + sgn(t) + '</text>';
+    });
+    values.forEach(function (val, i) {
+      var cx = L + band * i + band / 2, y0 = y(0), y1 = y(val);
+      if (val) s += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + Math.min(y0, y1).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, Math.abs(y1 - y0)).toFixed(1) + '" rx="1.5" fill="' + (val > 0 ? UP : DOWN) + '"/>';
+      if (labels[i]) s += '<text x="' + cx + '" y="' + (H - 5) + '" text-anchor="middle" font-size="9" fill="' + INK + '">' + u.esc(labels[i]) + '</text>';
+      s += '<rect class="ch-hit" x="' + (L + band * i) + '" y="' + T + '" width="' + band + '" height="' + ph + '" fill="transparent" tabindex="0" data-cx="' + cx + '" data-tip="' + u.esc((opt.tips || [])[i] || '') + '"/>';
+    });
+    s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="' + INK2 + '" stroke-width="1"/></svg>';
+    el.innerHTML = '<div class="ch-box" data-w="' + W + '">' + s + '<div class="ch-tip" hidden></div></div>' +
+      legend([{ name: 'プラスの日', color: UP }, { name: 'マイナスの日', color: DOWN }]);
+    bindTips(el.querySelector('.ch-box'));
+  }
+
+  return { columns: columns, lines: lines, slump: slump, posneg: posneg, short: short };
 })();
