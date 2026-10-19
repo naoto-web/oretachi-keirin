@@ -126,5 +126,51 @@ var CHART = (function () {
     bindTips(el.querySelector('.ch-box'));
   }
 
-  return { columns: columns, lines: lines, short: short };
+  /* 🆕10/19 スランプグラフ（配信者Aの要望）＝累計の収支（回収−投資）の折れ線。マイナスも描く・0の線は濃く
+     labels＝x の目盛りの字（空なら出さない）／series＝[{ name, color, values }]／opt.tips＝列ごとの吹き出しHTML */
+  function slump(el, labels, series, opt) {
+    opt = opt || {};
+    var W = 340, H = opt.h || 170, L = 40, R = 40, T = 12, B = 18;
+    var all = [0];
+    series.forEach(function (sr) { sr.values.forEach(function (v) { if (v != null) all.push(v); }); });
+    var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+    // 目盛り＝0をはさんで上下に（きりのいい刻み）
+    var span = Math.max(hi - lo, 1), raw = span / 4, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+    var step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+    var bot = Math.floor(lo / step) * step, top = Math.ceil(hi / step) * step;
+    if (top === bot) top = bot + step;
+    var tk = [];
+    for (var v = bot; v <= top + step * 0.001; v += step) tk.push(Math.round(v));
+    var pw = W - L - R, ph = H - T - B, n = labels.length;
+    var x = function (i) { return L + (n > 1 ? pw * i / (n - 1) : pw / 2); };
+    var y = function (v) { return T + ph - (v - bot) / (top - bot) * ph; };
+    var sgn = function (v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + short(Math.abs(v)); };
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + u.esc(opt.title || '') + '">';
+    tk.forEach(function (t) {
+      s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(t) + '" y2="' + y(t) + '" stroke="' + (t === 0 ? INK2 : GRID) + '" stroke-width="1"/>' +
+        '<text x="' + (L - 4) + '" y="' + (y(t) + 3) + '" text-anchor="end" font-size="9" fill="' + INK2 + '">' + sgn(t) + '</text>';
+    });
+    labels.forEach(function (lb, i) { if (lb) s += '<text x="' + x(i) + '" y="' + (H - 5) + '" text-anchor="middle" font-size="9" fill="' + INK + '">' + u.esc(lb) + '</text>'; });
+    series.forEach(function (sr) {
+      var d = '', pen = false, lastI = -1;
+      sr.values.forEach(function (v, i) {
+        if (v == null) { pen = false; return; }
+        d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(v).toFixed(1); pen = true; lastI = i;
+      });
+      s += '<path d="' + d + '" fill="none" stroke="' + sr.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+      if (lastI >= 0) {
+        s += '<circle cx="' + x(lastI) + '" cy="' + y(sr.values[lastI]) + '" r="3.5" fill="' + sr.color + '" stroke="' + SURF + '" stroke-width="2"/>' +
+          '<text x="' + (x(lastI) + 6) + '" y="' + (y(sr.values[lastI]) + 3) + '" font-size="9" fill="' + INK + '">' + sgn(sr.values[lastI]) + '</text>';
+      }
+    });
+    labels.forEach(function (lb, i) {
+      var w = n > 1 ? pw / (n - 1) : pw;
+      s += '<rect class="ch-hit ch-hit-line" x="' + (x(i) - w / 2) + '" y="' + T + '" width="' + w + '" height="' + ph + '" fill="transparent" tabindex="0" data-cx="' + x(i) + '" data-tip="' + u.esc((opt.tips || [])[i] || '') + '"/>';
+    });
+    s += '</svg>';
+    el.innerHTML = '<div class="ch-box" data-w="' + W + '">' + s + '<div class="ch-tip" hidden></div></div>' + legend(series.map(function (sr) { return { name: sr.name, color: sr.color, line: true }; }));
+    bindTips(el.querySelector('.ch-box'));
+  }
+
+  return { columns: columns, lines: lines, slump: slump, short: short };
 })();
