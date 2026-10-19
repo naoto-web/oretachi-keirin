@@ -514,7 +514,7 @@ var SHIFT = (function () {
     var said = [c.off ? '休' + c.off : '', c.half ? '半休' + c.half : '', c.want ? '入りたい' + c.want : ''].filter(Boolean).join('・');
     return '<div class="wish-bar' + (left <= 3 ? ' is-urgent' : '') + '"><span><b>' + u.monthLabel(d.ym) + 'の休み・出勤希望</b> 締切 ' + u.md(d.wish.due) + '・<b class="num">' + (left ? 'あと' + left + '日' : '今日まで') + '</b></span>' +
       '<small>' + (n ? '出した：' + said + '・' : d.wish.none ? '「希望なし」で出しました・' : '') + '日付を押して出せます</small>' +
-      (!n && !d.wish.none && !st.me.previewBy ? '<button type="button" class="link-btn" id="wm-none">この月は希望なしで出す</button>' : '') + '</div>';
+      (!n && !d.wish.none && !st.me.previewBy ? '<button type="button" class="link-btn" id="wm-none"' + (st.wbusy ? ' disabled' : '') + '>' + (st.wbusy ? '送っています…' : 'この月は希望なしで出す') + '</button>' : '') + '</div>';
   }
   function wishSend(body, msg) {
     st.wbusy = true; SHIFT.render();
@@ -685,7 +685,8 @@ var SHIFT = (function () {
       var value = draftValue(dr);
       wishSend({ date: dr.date, value: value, note: dr.note, expect: cur }, value ? u.md(dr.date) + 'の希望を出しました' : '取り消しました');
     });
-    if (q('#wm-none')) q('#wm-none').addEventListener('click', function () { wishSend({ none: true }, '「希望なし」で出しました'); });
+    // 🐞10/19 送っている間も押せて4件届いた＝送っている間は押しても何もしない（ボタンも「送っています…」に）
+    if (q('#wm-none')) q('#wm-none').addEventListener('click', function () { if (st.wbusy) return; wishSend({ none: true }, '「希望なし」で出しました'); });
     if (q('#focus')) q('#focus').addEventListener('change', function () { st.focus = q('#focus').value; render(el); });
     if (q('#pub-ask')) q('#pub-ask').addEventListener('click', function () { st.confirm = true; render(el); });
     if (q('#pub-no')) q('#pub-no').addEventListener('click', function () { st.confirm = false; render(el); });
