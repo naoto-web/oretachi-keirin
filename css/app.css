@@ -1339,4 +1339,5 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .s-hm-row.is-sum { border-top: 0; background: var(--accent-soft); border-radius: 8px; padding: 6px 6px; margin: 0 -6px; }
 .s-hm-row.is-sum .s-hm-v b { font-size: 18px; }
 .s-hm-row.is-empty .s-hm-k { color: var(--fg-faint); }
-.s-hm-cap { font-size: 11px; font-weight: 700; color: var(--fg-dim); margin-top: 8px; }
+.s-hm-cap { font-size: 11px; font-weight: 700; color: var(--fg-dim); margin-top: 8px; }/* スランプグラフの切り替え2つを横に並べる（10/19） */
+.s-sl-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
