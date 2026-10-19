@@ -373,6 +373,12 @@ var SALES = (function () {
     if (st.slump) return st.slump;
     try { return localStorage.getItem(SLUMP_LS) || 'month'; } catch (e) { return 'month'; }
   }
+  // 🔄10/19 Naoto「累積だとショックを受けそう」→「両方出そう」＝［日ごと｜累計］・最初は日ごと（端末が覚える）
+  var SLV_LS = 'gakuya:sales:slumpview';
+  function slumpView() {
+    if (st.slv) return st.slv;
+    try { return localStorage.getItem(SLV_LS) || 'day'; } catch (e) { return 'day'; }
+  }
   function drawSlump(el) {
     var box = el.querySelector('#ch-slump');
     if (!box || !window.CHART || !CHART.slump) return;
@@ -391,16 +397,23 @@ var SALES = (function () {
     });
     order.sort();
     if (!order.length) { box.innerHTML = '<p class="sub">確定したレースがまだありません</p>'; return; }
-    var cum = { all: [0, 0], live: [0, 0], note: [0, 0] }, vals = { all: [], live: [], note: [] }, tips = [], labels = [];
+    var cum = { all: [0, 0], live: [0, 0], note: [0, 0] }, vals = { all: [], live: [], note: [] }, tips = [], labels = [], daily = [], dtips = [];
     var every = Math.max(1, Math.ceil(order.length / 6));
     order.forEach(function (k, i) {
       ['all', 'live', 'note'].forEach(function (c) { cum[c][0] += days[k][c][0]; cum[c][1] += days[k][c][1]; vals[c].push(cum[c][1] - cum[c][0]); });
+      var dd2 = days[k], md = (+k.slice(5, 7)) + '/' + (+k.slice(8));
+      daily.push(dd2.all[1] - dd2.all[0]);
+      dtips.push('<b>' + md + '</b>' + [['all', '全体'], ['live', 'ライブ'], ['note', 'note']].map(function (c) {
+        var inv = dd2[c[0]][0], ref = dd2[c[0]][1], bal = ref - inv;
+        return '<br>' + c[1] + ' ' + (inv ? (bal >= 0 ? '+' : '−') + u.yen(Math.abs(bal)) + '円（' + (ref / inv * 100).toFixed(1) + '%）' : '—');
+      }).join(''));
       labels.push(i % every === 0 || (i === order.length - 1 && i % every >= every / 2) ? (+k.slice(5, 7)) + '/' + (+k.slice(8)) : '');
       tips.push('<b>' + (+k.slice(5, 7)) + '/' + (+k.slice(8)) + 'まで</b>' + [['all', '全体'], ['live', 'ライブ'], ['note', 'note']].map(function (c) {
         var inv = cum[c[0]][0], ref = cum[c[0]][1], bal = ref - inv;
         return '<br>' + c[1] + ' ' + (inv ? (bal >= 0 ? '+' : '−') + u.yen(Math.abs(bal)) + '円（' + (ref / inv * 100).toFixed(1) + '%）' : '—');
       }).join(''));
     });
+    if (slumpView() === 'day') { CHART.posneg(box, labels, daily, { title: '日ごとの収支', tips: dtips }); return; }
     CHART.slump(box, labels, [
       { name: '全体', color: SL_C.all, values: vals.all },
       { name: 'ライブ', color: SL_C.live, values: vals.live },
@@ -449,9 +462,11 @@ var SALES = (function () {
         (hp ? '。合計の行の▲▼＝' + (hPart ? '先月同期比' : '先月比') : '') +
         '。グレード＝G3以上の開催（その中のガールズはガールズ）' + (miss > 0 ? '。時間帯の分からない' + miss + 'レースは時間帯の段に入れていない' : '') + '</p></div>' +
       // 🆕10/19 スランプグラフ（配信者Aの要望）＝描くのは drawSlump（画面に置いてから）
-      '<div class="card ch-card" style="--mc:' + colorOf(who) + '"><div class="ch-title">収支の推移（スランプグラフ）<small>回収−投資の累計・押すとその日まで</small></div>' +
+      '<div class="card ch-card" style="--mc:' + colorOf(who) + '"><div class="ch-title">収支の推移（スランプグラフ）<small>回収−投資・押すと内訳</small></div>' +
+        '<div class="s-sl-tabs"><div class="sm-scale s-hm-tab" role="group" aria-label="見せ方"><button type="button" class="sm-sc' + (slumpView() === 'day' ? ' is-on' : '') + '" data-slv="day">日ごと</button>' +
+        '<button type="button" class="sm-sc' + (slumpView() === 'cum' ? ' is-on' : '') + '" data-slv="cum">累計</button></div>' +
         '<div class="sm-scale s-hm-tab" role="group" aria-label="期間"><button type="button" class="sm-sc' + (slumpMode() === 'month' ? ' is-on' : '') + '" data-slump="month">この月</button>' +
-        '<button type="button" class="sm-sc' + (slumpMode() === 'all' ? ' is-on' : '') + '" data-slump="all">通算（8/14〜）</button></div>' +
+        '<button type="button" class="sm-sc' + (slumpMode() === 'all' ? ' is-on' : '') + '" data-slump="all">通算（8/14〜）</button></div></div>' +
         '<div id="ch-slump" data-who="' + u.esc(who) + '"></div></div>';
   }
   // 🆕10/6 noteの売上がまだ無い月（Naoto「売上がまだ無い月も出す」）＝予想の成績だけ先に出す
@@ -580,9 +595,19 @@ var SALES = (function () {
     if (who) who.addEventListener('change', function () { st.who = who.value; draw(); window.scrollTo(0, 0); });
     if (rl) rl.addEventListener('click', function () { if (st.loading) return; delete st.data[st.ym]; delete st.shift[st.ym]; st.all = null; st.allErr = false; load(st.ym); });
     el.querySelectorAll('[data-mt]').forEach(function (b) { b.addEventListener('click', function () { st.mtKind = b.dataset.mt; draw(); }); });
+    el.querySelectorAll('[data-slv]').forEach(function (b) { b.addEventListener('click', function () {
+      st.slv = b.dataset.slv; try { localStorage.setItem(SLV_LS, st.slv); } catch (e) { /* 覚えられなくてもこの回は切り替える */ }
+      el.querySelectorAll('[data-slv]').forEach(function (x) { x.classList.toggle('is-on', x === b); });
+      drawSlump(el);
+    }); });
     el.querySelectorAll('[data-slump]').forEach(function (b) { b.addEventListener('click', function () {
       st.slump = b.dataset.slump; try { localStorage.setItem(SLUMP_LS, st.slump); } catch (e) { /* 覚えられなくてもこの回は切り替える */ }
-      el.querySelectorAll('[data-slump]').forEach(function (x) { x.classList.toggle('is-on', x === b); });
+      el.querySelectorAll('[data-slv]').forEach(function (b) { b.addEventListener('click', function () {
+      st.slv = b.dataset.slv; try { localStorage.setItem(SLV_LS, st.slv); } catch (e) { /* 覚えられなくてもこの回は切り替える */ }
+      el.querySelectorAll('[data-slv]').forEach(function (x) { x.classList.toggle('is-on', x === b); });
+      drawSlump(el);
+    }); });
+    el.querySelectorAll('[data-slump]').forEach(function (x) { x.classList.toggle('is-on', x === b); });
       drawSlump(el);
     }); });
     el.querySelectorAll('[data-hittab]').forEach(function (b) { b.addEventListener('click', function () {
