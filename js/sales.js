@@ -171,14 +171,22 @@ var SALES = (function () {
   // ── 購入者数（9/30 Naoto③）＝人数だけ（名前は持っていない）。🔄同日 配信者にも本人分は見せる（本人のnoteから数えた本人の客の人数）＝GASが本人の行だけ返す ──
   function buyerOf(who, ym) { return (st.buyers || []).filter(function (r) { return r[0] === who && r[1] === ym; })[0] || null; }
 
+  // 月の矢印「‹ 10月 ›」。左＝前の月・右＝次の月（無ければ押せない）
+  function ymNav() {
+    var ms = (st.months || []).map(function (m) { return m.ym; }), i = ms.indexOf(st.ym);
+    var prev = i > 0 ? ms[i - 1] : '', next = i >= 0 && i < ms.length - 1 ? ms[i + 1] : '';
+    var thisYear = String(new Date().getFullYear());
+    return '<div class="s-ymnav"><button type="button" class="s-ymgo" data-ymgo="' + prev + '"' + (prev ? '' : ' disabled') + ' aria-label="前の月">‹</button>' +
+      '<b>' + (st.ym.slice(0, 4) === thisYear ? '' : '<small>' + st.ym.slice(0, 4) + '年</small>') + u.monthLabel(st.ym) + '</b>' +
+      '<button type="button" class="s-ymgo" data-ymgo="' + next + '"' + (next ? '' : ' disabled') + ' aria-label="次の月">›</button></div>';
+  }
   function head(d) {
     var months = (st.months || []).slice().reverse();
     return '<div class="title-row"><h1 class="screen-title">実績</h1>' + (window.PRESENCE ? PRESENCE.seg() : '') + '<span class="title-aside">' + (st.loading ? '読み込み中…' : d && d.asof ? u.mdShort(d.asof) + 'までのnote' : d && d.nosales && d.hitsAsof ? u.mdShort(d.hitsAsof) + 'までの予想' : '') +
       ' <button type="button" class="link-btn" id="s-reload">最新にする</button></span></div>' +
-      '<div class="s-pick"><select id="s-ym" class="date-input" aria-label="月">' + months.map(function (m) {
-        return '<option value="' + m.ym + '"' + (m.ym === st.ym ? ' selected' : '') + '>' + m.ym.slice(0, 4) + '年' + u.monthLabel(m.ym) + '</option>';
-      }).join('') + '</select>' +
-      (st.mine ? '' : '<select id="s-who" class="date-input" aria-label="人"><option value="">全員</option>' + members().map(function (m) {
+      // 🔄10/19 Naoto「←10月→みたいなのが見やすい」＝月は矢印で前後に。行ごと画面の上に貼り付く（下の枠を見ながら月を変えられる）
+      //   どの枠も同じ月で動く（枠ごとに別の月にはしない＝同じ画面に違う月が混ざると読み違えるため）
+      '<div class="s-pick s-pick-nav">' + ymNav() +      (st.mine ? '' : '<select id="s-who" class="date-input" aria-label="人"><option value="">全員</option>' + members().map(function (m) {
         return '<option value="' + u.esc(m.name) + '"' + (m.name === st.who ? ' selected' : '') + '>' + u.esc(m.name) + '</option>';
       }).join('') + '</select>') + '</div>';
   }
@@ -554,6 +562,8 @@ var SALES = (function () {
       }).join('') : '<p class="sub">この月の記事はありません。</p>') + '</div>';
   }
 
+  // 月の矢印で、まだ読んでいない月に移ったとき＝読み終わって描いたら、押したときの位置へ戻す（10/19）
+  function keepScroll() { if (st.keepY != null) { var y = st.keepY; st.keepY = null; window.scrollTo(0, y); } }
   function draw() {
     if (APP.current() !== 'stats') return;
     if (window.PRESENCE && PRESENCE.active()) return;   // 出演を見ている間に売上の読み込みが終わっても上書きしない（10/1）
@@ -573,7 +583,7 @@ var SALES = (function () {
     }
     if (d.nosales) {
       el.innerHTML = head(d) + nosalesView(d);
-      bind(el); drawSlump(el);
+      bind(el); drawSlump(el); keepScroll();
       if (!st.all && !st.allErr) loadAll();
       return;
     }
@@ -587,11 +597,20 @@ var SALES = (function () {
     bind(el);
     drawCharts(el, d);
     drawSlump(el);
+    keepScroll();
   }
 
   function bind(el) {
     var ym = el.querySelector('#s-ym'), who = el.querySelector('#s-who'), rl = el.querySelector('#s-reload');
     if (ym) ym.addEventListener('change', function () { st.ym = ym.value; if (st.data[st.ym]) draw(); else load(st.ym); });
+    el.querySelectorAll('[data-ymgo]').forEach(function (b) { b.addEventListener('click', function () {
+      if (!b.dataset.ymgo) return;
+      var y = window.scrollY; st.ym = b.dataset.ymgo;
+      if (st.data[st.ym]) { draw(); window.scrollTo(0, y); } else { st.keepY = y; load(st.ym); }   // 読み込み後に元の位置へ（draw の最後）
+    }); });
+    // 月の行はロゴの行のすぐ下に貼り付ける（ロゴの行の高さは端末で違う＝測って入れる）
+    var nav = el.querySelector('.s-pick-nav'), top = document.querySelector('.top');
+    if (nav && top) nav.style.top = top.getBoundingClientRect().height + 'px';
     if (who) who.addEventListener('change', function () { st.who = who.value; draw(); window.scrollTo(0, 0); });
     if (rl) rl.addEventListener('click', function () { if (st.loading) return; delete st.data[st.ym]; delete st.shift[st.ym]; st.all = null; st.allErr = false; load(st.ym); });
     el.querySelectorAll('[data-mt]').forEach(function (b) { b.addEventListener('click', function () { st.mtKind = b.dataset.mt; draw(); }); });
