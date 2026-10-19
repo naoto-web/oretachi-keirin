@@ -166,47 +166,7 @@ var SALES = (function () {
   //   keyOf(行)→区分の名前（null＝数えない）。order＝表の並び
   var WAKU_NAME = { 'モ': 'モーニング', 'デ': 'デイ', 'ナ': 'ナイター', 'ミ': 'ミッド' };
   // keepEmpty＝実績の無い区分も行を出す（数字は「—」）＝10/2 Naoto「グレードの実績が無い人もグレードの行は出す」
-  function hitBy(ym, who, keyOf, order, keepEmpty) {
-    var by = {};
-    ((st.hits || {})[ym] || []).forEach(function (r) {
-      if (r[H.who] !== who) return;
-      var k = keyOf(r);
-      if (!k) return;
-      var s = by[k] || (by[k] = { settled: 0, hit: 0, inv: 0, ref: 0 });
-      s.settled += r[H.settled]; s.hit += r[H.hit]; s.inv += r[H.inv]; s.ref += r[H.ref];
-    });
-    return order.filter(function (k) { return keepEmpty || (by[k] && by[k].settled); }).map(function (k) {
-      var s = by[k];
-      if (!s || !s.settled) return { k: k, n: 0, rate: null, back: null, hit: 0 };
-      return { k: k, n: s.settled, rate: s.hit / s.settled * 100, back: s.inv ? s.ref / s.inv * 100 : null, hit: s.hit };
-    });
-  }
-  function hitTable(title, note, rows) {
-    if (!rows.length) return '';
-    return '<div class="card s-brk s-hitby"><div class="s-k3-title">' + title + (note ? '<small>' + note + '</small>' : '') + '</div>' +
-      '<div class="s-br s-br-head"><span></span><span>的中率</span><span>回収率</span><span>レース</span></div>' +
-      rows.map(function (x) {
-        return '<div class="s-br' + (x.n ? '' : ' is-none') + '"><span>' + x.k + '</span><span class="num">' + pct1(x.rate) + '</span><span class="num">' + pct1(x.back) + '</span><span class="num">' + (x.n ? x.hit + '/' + x.n : '—') + '</span></div>';
-      }).join('') + '</div>';
-  }
-  function wakuTable(ym, who) {
-    // 🔄10/2 Naoto「時間帯別も全部出す・『ない』も分かるように」＝実績の無い時間帯も「—」で出す
-    var rows = hitBy(ym, who, function (r) { return WAKU_NAME[r[H.waku]] || null; }, ['モーニング', 'デイ', 'ナイター', 'ミッド'], true);
-    // 時間帯が分からないレース（同じ日に同じ場で区分が2つある等）は表に入れない＝数を注記に出す
-    var all = hitStats(ym, who), inT = rows.reduce(function (a, x) { return a + x.n; }, 0), miss = all ? all.settled - inT : 0;
-    return hitTable('時間帯別の成績', '確定したレースだけ' + (miss > 0 ? '・時間帯の分からない' + miss + 'レースは入れていない' : ''), rows);
-  }
-  // 🆕10/1 Naoto「グレード・チャレンジ・ガールズの的中率・回収率」
-  //   1レースは1つの行にだけ入れる＝ガールズ→チャレンジ→グレード（G3以上の開催）→それ以外の順に当てはめる
-  //   （グレード開催の中のガールズのレースはガールズに入る）。区分＝競輪予想のレースDB（keirin.jp の公式の区分）
-  function kindTable(ym, who) {
-    var rows = ((st.hits || {})[ym] || []);
-    if (!rows.length || rows[0].length <= H.g) return '';   // 前のデータ（G の列が無い）のときは出さない
-    var hasKind = rows[0].length > H.kind;
-    return hitTable('レースの種類別の成績', 'グレード＝G3以上の開催（その中のガールズはガールズに入れる）', hitBy(ym, who, function (r) {
-      return hasKind && r[H.kind] ? r[H.kind] : r[H.g] === 'G' ? 'グレード' : 'それ以外';
-    }, ['グレード', 'チャレンジ', 'ガールズ', 'それ以外'], true));
-  }
+  // ※旧 hitBy・hitTable・wakuTable・kindTable（種類別・時間帯別の別々の枠）は 10/19 に1つの表（hitCards）へまとめた
 
   // ── 購入者数（9/30 Naoto③）＝人数だけ（名前は持っていない）。🔄同日 配信者にも本人分は見せる（本人のnoteから数えた本人の客の人数）＝GASが本人の行だけ返す ──
   function buyerOf(who, ym) { return (st.buyers || []).filter(function (r) { return r[0] === who && r[1] === ym; })[0] || null; }
@@ -383,24 +343,69 @@ var SALES = (function () {
     var ks = Object.keys(st.hits || {}).filter(function (k) { return (st.hits[k] || []).length; }).sort(), i = ks.indexOf(ym);
     return i > 0 ? ks[i - 1] : '';
   }
+  /* 🔄10/19 予想の成績を1つの表に（Naoto・配信者Aの要望「グレードのnoteとライブの回収率をそれぞれ」）
+     ・横＝全体・ライブ・note／縦＝合計 → レースの種類（グレード・チャレンジ・ガールズ・それ以外）→ 時間帯（モーニング〜ミッド）
+       1レースはどの区切りでも1つの行にだけ入る（種類＝ガールズ→チャレンジ→グレード→それ以外の順・時間帯の分からないレースは時間帯の段に入れない）
+     ・［回収率｜的中率］のタブで切り替え（既定＝回収率・端末が覚える）。マス＝大きい数字が率・下にレース数（母数）
+     ・先月との比較は合計の行だけ（先月まるごとと比べる・表記は月の途中＝先月同期比／月末までそろった＝先月比） */
+  var HIT_TAB_LS = 'gakuya:sales:hittab';
+  function hitTab() {
+    if (st.hitTab) return st.hitTab;
+    try { return localStorage.getItem(HIT_TAB_LS) || 'back'; } catch (e) { return 'back'; }
+  }
+  function hitCell(rows, col) {
+    var s = { settled: 0, hit: 0, inv: 0, ref: 0 };
+    rows.forEach(function (r) {
+      if (col === 'live' && r[H.note]) return;
+      if (col === 'note' && !r[H.note]) return;
+      s.settled += r[H.settled]; s.hit += r[H.hit]; s.inv += r[H.inv]; s.ref += r[H.ref];
+    });
+    s.rate = s.settled ? s.hit / s.settled * 100 : null;
+    s.back = s.inv ? s.ref / s.inv * 100 : null;
+    return s;
+  }
   function hitCards(who) {
     var hs = st.all ? hitStats(st.ym, who) : null;
-    // 🔄10/16 Naoto：比べる相手は先月まるごと（割合なので出勤の多い少ないは関係ない・同じ日までだと月の前半は母数が少なくぶれる）
-    //   表記だけ、月の途中＝先月同期比／月末までそろった＝先月比（売上の欄とそろえる）
-    var hPart = hs && hs.last < u.daysIn(st.ym);
-    var hp = hs && hitPrevYm(st.ym) ? hitStats(hitPrevYm(st.ym), who) : null;
-    var dlH = function (html) { return html ? '<small class="s-dl">' + (hPart ? '先月同期比' : '先月比') + ' ' + html + '</small>' : ''; };
-    return '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">予想の成績<small>配信コンソールの予想' + hitRangeLabel(st.ym) + '</small></div>' +
-      (hs ? '<div class="s-k"><small>的中率</small><b class="num">' + pct1(hs.rate) + '</b><small>' + hs.hit + '/' + hs.settled + 'レース</small>' + dlH(hp && delta(hs.rate, hp.rate, 'pt')) + '</div>' +
-        '<div class="s-k"><small>回収率</small><b class="num">' + pct1(hs.back) + '</b><small>回収 ' + yen(hs.ref) + '</small>' + dlH(hp && delta(hs.back, hp.back, 'pt')) + '</div>' +
-        '<div class="s-k"><small>ライブ予想の的中率</small><b class="num">' + pct1(hs.lRate) + '</b><small>' + hs.lHit + '/' + hs.lSettled + 'レース</small>' + dlH(hp && delta(hs.lRate, hp.lRate, 'pt')) + '</div>' +
-        '<div class="s-k"><small>ライブ予想の回収率</small><b class="num">' + pct1(hs.lBack) + '</b><small>回収 ' + yen(hs.lRef) + '</small>' + dlH(hp && delta(hs.lBack, hp.lBack, 'pt')) + '</div>' +
-        '<div class="s-k"><small>note記事の的中率</small><b class="num">' + pct1(hs.nRate) + '</b><small>' + hs.nHit + '/' + hs.nSettled + 'レース</small>' + dlH(hp && delta(hs.nRate, hp.nRate, 'pt')) + '</div>' +
-        '<div class="s-k"><small>note記事の回収率</small><b class="num">' + pct1(hs.nBack) + '</b><small>回収 ' + yen(hs.nRef) + '</small>' + dlH(hp && delta(hs.nBack, hp.nBack, 'pt')) + '</div>'
-        : '<p class="sub">' + (st.all ? 'この月の予想データはありません（8/14から）' : '読み込み中…') + '</p>') + '</div>' +
-      (hs ? kindTable(st.ym, who) + wakuTable(st.ym, who) : '');
+    var title = '<div class="s-k3-title">予想の成績<small>配信コンソールの予想' + hitRangeLabel(st.ym) + '</small></div>';
+    if (!hs) return '<div class="card s-hm" style="--mc:' + colorOf(who) + '">' + title + '<p class="sub">' + (st.all ? 'この月の予想データはありません（8/14から）' : '読み込み中…') + '</p></div>';
+    var tab = hitTab(), isBack = tab === 'back';
+    var rows = ((st.hits || {})[st.ym] || []).filter(function (r) { return r[H.who] === who; });
+    var hPart = hs.last < u.daysIn(st.ym);
+    var hp = hitPrevYm(st.ym) ? hitStats(hitPrevYm(st.ym), who) : null;
+    var COLS = [['all', '全体'], ['live', 'ライブ'], ['note', 'note']];
+    var PREV = { all: ['rate', 'back'], live: ['lRate', 'lBack'], note: ['nRate', 'nBack'] };
+    var line = function (label, rs, cls, withDelta) {
+      return '<div class="s-hm-row' + (cls ? ' ' + cls : '') + '"><span class="s-hm-k">' + label + '</span>' + COLS.map(function (c) {
+        var s = hitCell(rs, c[0]);
+        if (!s.settled) return '<span class="s-hm-v is-none">—</span>';
+        var v = isBack ? s.back : s.rate;
+        var sub = isBack ? s.settled + 'R' : s.hit + '/' + s.settled;
+        var dl = '';
+        if (withDelta && hp) { var pv = hp[PREV[c[0]][isBack ? 1 : 0]]; var dd = delta(v, pv, 'pt'); if (dd) dl = '<small class="s-dl">' + dd + '</small>'; }
+        return '<span class="s-hm-v"><b class="num">' + pct1(v) + '</b><small>' + sub + '</small>' + dl + '</span>';
+      }).join('') + '</div>';
+    };
+    var group = function (keyOf, order) {
+      var by = {};
+      rows.forEach(function (r) { var k = keyOf(r); if (k) (by[k] = by[k] || []).push(r); });
+      return order.map(function (k) { return line(k, by[k] || [], by[k] ? '' : 'is-empty'); }).join('');
+    };
+    var hasG = rows.length && rows[0].length > H.g, hasKind = rows.length && rows[0].length > H.kind;
+    var kindRows = hasG ? group(function (r) { return hasKind && r[H.kind] ? r[H.kind] : r[H.g] === 'G' ? 'グレード' : 'それ以外'; }, ['グレード', 'チャレンジ', 'ガールズ', 'それ以外']) : '';
+    var miss = rows.reduce(function (a, r) { return a + (WAKU_NAME[r[H.waku]] ? 0 : r[H.settled]); }, 0);
+    var wakuRows = group(function (r) { return WAKU_NAME[r[H.waku]] || null; }, ['モーニング', 'デイ', 'ナイター', 'ミッド']);
+    return '<div class="card s-hm" style="--mc:' + colorOf(who) + '">' + title +
+      '<div class="sm-scale s-hm-tab" role="group" aria-label="中身">' +
+        '<button type="button" class="sm-sc' + (isBack ? ' is-on' : '') + '" data-hittab="back">回収率</button>' +
+        '<button type="button" class="sm-sc' + (isBack ? '' : ' is-on') + '" data-hittab="rate">的中率</button></div>' +
+      '<div class="s-hm-row s-hm-head"><span></span>' + COLS.map(function (c) { return '<span>' + c[1] + '</span>'; }).join('') + '</div>' +
+      line('合計', rows, 'is-sum', true) +
+      (kindRows ? '<div class="s-hm-cap">レースの種類</div>' + kindRows : '') +
+      '<div class="s-hm-cap">時間帯</div>' + wakuRows +
+      '<p class="fresh s-note">' + (isBack ? '下の小さい数字＝確定したレース数' : '下の小さい数字＝的中/確定したレース') +
+        (hp ? '。合計の行の▲▼＝' + (hPart ? '先月同期比' : '先月比') : '') +
+        '。グレード＝G3以上の開催（その中のガールズはガールズ）' + (miss > 0 ? '。時間帯の分からない' + miss + 'レースは時間帯の段に入れていない' : '') + '</p></div>';
   }
-
   // 🆕10/6 noteの売上がまだ無い月（Naoto「売上がまだ無い月も出す」）＝予想の成績だけ先に出す
   //   noteの販売履歴は月2回（16日ごろ＝1〜15日分／翌月3日ごろ＝月末まで）取り込む
   function nosalesView(d) {
@@ -526,6 +531,10 @@ var SALES = (function () {
     if (who) who.addEventListener('change', function () { st.who = who.value; draw(); window.scrollTo(0, 0); });
     if (rl) rl.addEventListener('click', function () { if (st.loading) return; delete st.data[st.ym]; delete st.shift[st.ym]; st.all = null; st.allErr = false; load(st.ym); });
     el.querySelectorAll('[data-mt]').forEach(function (b) { b.addEventListener('click', function () { st.mtKind = b.dataset.mt; draw(); }); });
+    el.querySelectorAll('[data-hittab]').forEach(function (b) { b.addEventListener('click', function () {
+      st.hitTab = b.dataset.hittab; try { localStorage.setItem(HIT_TAB_LS, st.hitTab); } catch (e) { /* 覚えられなくてもこの回は切り替える */ }
+      var y = window.scrollY; draw(); window.scrollTo(0, y);
+    }); });
     el.querySelectorAll('[data-swho]').forEach(function (b) { b.addEventListener('click', function () { st.who = b.dataset.swho; draw(); window.scrollTo(0, 0); }); });
   }
 
