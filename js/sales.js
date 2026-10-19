@@ -364,6 +364,49 @@ var SALES = (function () {
     s.back = s.inv ? s.ref / s.inv * 100 : null;
     return s;
   }
+  /* 🆕10/19 スランプグラフ（配信者Aの要望「回収率のスランプグラフ」）
+     ・中身＝その日までの収支（回収−投資）の累計。全体・ライブ・note の3本。吹き出しにその日までの回収率も
+     ・期間＝［この月｜通算（8/14〜）］（端末が覚える）。1日1点（予想データは人×日×区分でまとまっているので1レースごとではない） */
+  var SLUMP_LS = 'gakuya:sales:slump';
+  var SL_C = { all: '#23252a', live: '#0f7f87', note: '#c2410c' };
+  function slumpMode() {
+    if (st.slump) return st.slump;
+    try { return localStorage.getItem(SLUMP_LS) || 'month'; } catch (e) { return 'month'; }
+  }
+  function drawSlump(el) {
+    var box = el.querySelector('#ch-slump');
+    if (!box || !window.CHART || !CHART.slump) return;
+    var who = box.getAttribute('data-who'), mode = slumpMode();
+    var yms = mode === 'all' ? Object.keys(st.hits || {}).filter(function (k) { return k <= st.ym; }).sort() : [st.ym];
+    var days = {}, order = [];
+    yms.forEach(function (ym) {
+      ((st.hits || {})[ym] || []).forEach(function (r) {
+        if (r[H.who] !== who) return;   // 表（hitCards）と同じ行を数える＝合計の回収率と吹き出しの最後が一致する
+        var k = ym + '-' + ('0' + r[H.day]).slice(-2);
+        var dd = days[k];
+        if (!dd) { dd = days[k] = { all: [0, 0], live: [0, 0], note: [0, 0] }; order.push(k); }
+        var c = r[H.note] ? 'note' : 'live';
+        dd.all[0] += r[H.inv]; dd.all[1] += r[H.ref]; dd[c][0] += r[H.inv]; dd[c][1] += r[H.ref];
+      });
+    });
+    order.sort();
+    if (!order.length) { box.innerHTML = '<p class="sub">確定したレースがまだありません</p>'; return; }
+    var cum = { all: [0, 0], live: [0, 0], note: [0, 0] }, vals = { all: [], live: [], note: [] }, tips = [], labels = [];
+    var every = Math.max(1, Math.ceil(order.length / 6));
+    order.forEach(function (k, i) {
+      ['all', 'live', 'note'].forEach(function (c) { cum[c][0] += days[k][c][0]; cum[c][1] += days[k][c][1]; vals[c].push(cum[c][1] - cum[c][0]); });
+      labels.push(i % every === 0 || (i === order.length - 1 && i % every >= every / 2) ? (+k.slice(5, 7)) + '/' + (+k.slice(8)) : '');
+      tips.push('<b>' + (+k.slice(5, 7)) + '/' + (+k.slice(8)) + 'まで</b>' + [['all', '全体'], ['live', 'ライブ'], ['note', 'note']].map(function (c) {
+        var inv = cum[c[0]][0], ref = cum[c[0]][1], bal = ref - inv;
+        return '<br>' + c[1] + ' ' + (inv ? (bal >= 0 ? '+' : '−') + u.yen(Math.abs(bal)) + '円（' + (ref / inv * 100).toFixed(1) + '%）' : '—');
+      }).join(''));
+    });
+    CHART.slump(box, labels, [
+      { name: '全体', color: SL_C.all, values: vals.all },
+      { name: 'ライブ', color: SL_C.live, values: vals.live },
+      { name: 'note', color: SL_C.note, values: vals.note }
+    ], { title: '収支の推移', tips: tips });
+  }
   function hitCards(who) {
     var hs = st.all ? hitStats(st.ym, who) : null;
     var title = '<div class="s-k3-title">予想の成績<small>配信コンソールの予想' + hitRangeLabel(st.ym) + '</small></div>';
@@ -404,7 +447,12 @@ var SALES = (function () {
       '<div class="s-hm-cap">時間帯</div>' + wakuRows +
       '<p class="fresh s-note">' + (isBack ? '下の小さい数字＝確定したレース数' : '下の小さい数字＝的中/確定したレース') +
         (hp ? '。合計の行の▲▼＝' + (hPart ? '先月同期比' : '先月比') : '') +
-        '。グレード＝G3以上の開催（その中のガールズはガールズ）' + (miss > 0 ? '。時間帯の分からない' + miss + 'レースは時間帯の段に入れていない' : '') + '</p></div>';
+        '。グレード＝G3以上の開催（その中のガールズはガールズ）' + (miss > 0 ? '。時間帯の分からない' + miss + 'レースは時間帯の段に入れていない' : '') + '</p></div>' +
+      // 🆕10/19 スランプグラフ（配信者Aの要望）＝描くのは drawSlump（画面に置いてから）
+      '<div class="card ch-card" style="--mc:' + colorOf(who) + '"><div class="ch-title">収支の推移（スランプグラフ）<small>回収−投資の累計・押すとその日まで</small></div>' +
+        '<div class="sm-scale s-hm-tab" role="group" aria-label="期間"><button type="button" class="sm-sc' + (slumpMode() === 'month' ? ' is-on' : '') + '" data-slump="month">この月</button>' +
+        '<button type="button" class="sm-sc' + (slumpMode() === 'all' ? ' is-on' : '') + '" data-slump="all">通算（8/14〜）</button></div>' +
+        '<div id="ch-slump" data-who="' + u.esc(who) + '"></div></div>';
   }
   // 🆕10/6 noteの売上がまだ無い月（Naoto「売上がまだ無い月も出す」）＝予想の成績だけ先に出す
   //   noteの販売履歴は月2回（16日ごろ＝1〜15日分／翌月3日ごろ＝月末まで）取り込む
@@ -510,7 +558,7 @@ var SALES = (function () {
     }
     if (d.nosales) {
       el.innerHTML = head(d) + nosalesView(d);
-      bind(el);
+      bind(el); drawSlump(el);
       if (!st.all && !st.allErr) loadAll();
       return;
     }
@@ -523,6 +571,7 @@ var SALES = (function () {
       '。手数料は決済方法ごとの推定' + (st.mine ? '（実際の入金と少しずれることがあります）' : '（収支表と±0.3%）') + '。</p>';
     bind(el);
     drawCharts(el, d);
+    drawSlump(el);
   }
 
   function bind(el) {
@@ -531,6 +580,11 @@ var SALES = (function () {
     if (who) who.addEventListener('change', function () { st.who = who.value; draw(); window.scrollTo(0, 0); });
     if (rl) rl.addEventListener('click', function () { if (st.loading) return; delete st.data[st.ym]; delete st.shift[st.ym]; st.all = null; st.allErr = false; load(st.ym); });
     el.querySelectorAll('[data-mt]').forEach(function (b) { b.addEventListener('click', function () { st.mtKind = b.dataset.mt; draw(); }); });
+    el.querySelectorAll('[data-slump]').forEach(function (b) { b.addEventListener('click', function () {
+      st.slump = b.dataset.slump; try { localStorage.setItem(SLUMP_LS, st.slump); } catch (e) { /* 覚えられなくてもこの回は切り替える */ }
+      el.querySelectorAll('[data-slump]').forEach(function (x) { x.classList.toggle('is-on', x === b); });
+      drawSlump(el);
+    }); });
     el.querySelectorAll('[data-hittab]').forEach(function (b) { b.addEventListener('click', function () {
       st.hitTab = b.dataset.hittab; try { localStorage.setItem(HIT_TAB_LS, st.hitTab); } catch (e) { /* 覚えられなくてもこの回は切り替える */ }
       var y = window.scrollY; draw(); window.scrollTo(0, y);
