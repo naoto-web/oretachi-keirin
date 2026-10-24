@@ -9,7 +9,18 @@
   const parse = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
   const ymd = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 
+  // 🆕10/24 Naoto「更新かけたら違うページに飛ぶ」＝いまどこを見ているか（タブ・開いている出走表）を覚えておき、更新したら戻す。
+  //   sessionStorage＝そのタブ（ホーム画面アプリなら起動中）だけ。アプリを閉じて開き直したときはいつもどおりシフトから
+  const LOC_KEY = 'gakuya:loc';
+  const loc = (patch) => {
+    let o = {};
+    try { o = JSON.parse(sessionStorage.getItem(LOC_KEY) || '{}') || {}; } catch (e) { o = {}; }
+    if (patch) { Object.assign(o, patch); try { sessionStorage.setItem(LOC_KEY, JSON.stringify(o)); } catch (e) { /* 覚えられなくても動く */ } }
+    return o;
+  };
+
   OKL.u = {
+    loc,
     pad,
     parse,
     ymd,
