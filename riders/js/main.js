@@ -60,13 +60,18 @@ var MOBILE = (function () {
 
   var listLoaded = false;
 
+  /** want＝list｜today｜scope（scope＝管理者の「見せる範囲」。タブの列には無く、右端の⚙から） */
   function setTab(want) {
     Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (x) { x.classList.toggle('is-on', x.dataset.tab === want); });
+    var gear = document.getElementById('scope-btn');
+    if (gear) gear.classList.toggle('is-on', want === 'scope');
     document.getElementById('app').dataset.tab = want;
     document.getElementById('pane-list').classList.toggle('is-hidden', want !== 'list');
     document.getElementById('pane-today').classList.toggle('is-hidden', want !== 'today');
+    document.getElementById('pane-scope').classList.toggle('is-hidden', want !== 'scope');
     if (want === 'today') TODAY.ensure();
     if (want === 'list') ensureList();
+    if (want === 'scope' && window.SCOPE) SCOPE.ensure();
     MOBILE.toList();
     backLabel();
   }
@@ -75,6 +80,10 @@ var MOBILE = (function () {
     Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
       t.addEventListener('click', function () { setTab(t.dataset.tab); });
     });
+    var gear = document.getElementById('scope-btn');
+    if (gear) gear.addEventListener('click', function () { setTab('scope'); });
+    // ⚙は管理者だけ（GASの me＝名簿・詳細の返事に添えてある。プレビュー中は canWrite が false＝出さない）
+    API.onMe(function (m) { if (gear) gear.classList.toggle('is-hidden', !(m && m.admin && m.canWrite)); });
     backLabel();
   }
 
