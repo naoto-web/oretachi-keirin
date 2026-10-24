@@ -45,6 +45,14 @@ var CONFIG = (function () {
     { key: 'seri', label: '競り', hint: '番手を争う形＋横の強さ' }
   ];
 
+  /* 競輪場の一覧（観察ログの「場」のプルダウン用）。表記は keirin.jp の開催一覧と同じ（旧 stagekit/riders から） */
+  var VENUES = [
+    '函館', '青森', 'いわき平', '弥彦', '前橋', '取手', '宇都宮', '大宮', '西武園', '京王閣',
+    '立川', '松戸', '川崎', '平塚', '小田原', '伊東', '静岡', '名古屋', '岐阜', '大垣',
+    '豊橋', '富山', '松阪', '四日市', '福井', '奈良', '和歌山', '岸和田', '玉野', '広島',
+    '防府', '小松島', '高知', '松山', '小倉', '久留米', '武雄', '佐世保', '別府', '熊本'
+  ];
+
   /* 追走能力の5段階（要件§3.3） */
   var FOLLOW_LEVELS = [
     { v: '5', label: '◎ とても上手い' },
@@ -65,10 +73,12 @@ var CONFIG = (function () {
     APP_KEY: appKey,
     APP_AS: appAs,
     HOST: host,
-    // 段1＝見るだけ。段2で書けるようにするときに true にする（detail.js が書く道具を出さない）
-    CAN_WRITE: false,
+    // 🔄2026-10-20 段2＝書ける。実際に書けるかは選手DBのGASが返す me.canWrite で決まる（プレビュー中は書けない）。
+    //   false に戻せば段1（見るだけ）に戻る
+    CAN_WRITE: true,
     COLORS: COLORS,
     ROLES: ROLES,
+    VENUES: VENUES,
     FOLLOW_LEVELS: FOLLOW_LEVELS,
     STATS_URL: STATS_BASE + 'stats.json',
     /* 集計期間の切り替え（2026-09-24 Naoto「4ヶ月・8ヶ月・1年で見られるように」）。窓ごとに別ファイル */
