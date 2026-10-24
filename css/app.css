@@ -1053,6 +1053,8 @@ html.rc-lock, html.rc-lock body { overflow: hidden; }
 .rc-bhs { margin-left: auto; display: inline-flex; gap: 5px; font-size: 13px; }
 .rc-bhs i { font-style: normal; }
 .rc-win { font-size: 13px; min-width: 46px; text-align: right; }
+/* 3行目＝決まり手（逃捲差マ）＋3連対率。右寄せ＝B H S・勝率の真下にそろえる（10/24） */
+.rc-l3 { display: flex; align-items: baseline; justify-content: flex-end; gap: 8px; font-size: 11px; color: var(--fg-dim); white-space: nowrap; }
 .top1 { color: #d12a2a; font-weight: 700; }
 .top2 { color: #1f5fd1; font-weight: 700; }
 
