@@ -844,3 +844,27 @@ html, body { font-family: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic UI"
 .vtab-grade.is-g { color: var(--gold); font-weight: 700; opacity: 1; }
 .vbtn-nichi { font-size: 11px; color: var(--fg-dim); }
 .vday-note { margin: 4px 2px 0; }
+
+/* ═══════════ 段2（2026-10-20）書く＝自分の札・見せる範囲 ═══════════ */
+/* 自分の札＝名前を青に（「◀ 今日」と同じ青＝いま見るべき所の印）。ほかの人の札はグレーのまま */
+.note-by.is-me { color: var(--accent); border-color: var(--accent); }
+.note-read.is-me .note-field { width: 100%; }
+/* 右端の⚙（管理者だけ）。margin-left:auto＝タブは左に固定＝配信者の画面を1pxも動かさない */
+.gear {
+  margin-left: auto; white-space: nowrap; font-size: 12px; padding: 5px 10px; color: var(--fg-dim); cursor: pointer;
+  background: transparent; border: 1px solid var(--line); border-radius: 7px;
+}
+.gear:hover { color: var(--fg); border-color: var(--accent); }
+.gear.is-on { background: var(--panel2); color: var(--fg); font-weight: 600; }
+/* 見せる範囲の画面 */
+.scope { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.scope-lead { font-size: 13px; line-height: 1.7; color: var(--fg-dim); }
+.scope-row { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.scope-name { font-weight: 700; font-size: 15px; }
+.scope-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.scope-opt {
+  background: var(--panel2); border: 1px solid var(--line); color: var(--fg-dim);
+  border-radius: 999px; padding: 7px 13px; font-size: 13px; cursor: pointer;
+}
+.scope-opt.is-on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+.scope-note { font-size: 12px; color: var(--fg-dim); }
