@@ -35,28 +35,39 @@ var CARD = (function () {
   window.addEventListener('popstate', function () { if (st.open && !(history.state && history.state.okcard)) hide(); });
   function hide() {
     st.open = false;
+    u.loc({ card: null });   // 閉じた＝更新しても開き直さない
     sheet().hidden = true;
     document.documentElement.classList.remove('rc-lock');
   }
   function close() { if (history.state && history.state.okcard) history.back(); else hide(); }
 
   // opts.back＝左上の戻るの文言（既定「‹ シフト」・選手タブからは「‹ 選手」）
+  //   🆕10/24 opts.race＝最初に開くレース／opts.restore＝更新したあとの開き直し（app.js）
   function open(date, place, opts) {
-    st.date = date; st.place = place; st.data = null; st.race = 0; st.odds = {}; st.oddsBusy = {}; st.err = '';
-    st.back = (opts && opts.back) || '‹ シフト';
+    opts = opts || {};
+    st.date = date; st.place = place; st.data = null; st.race = +opts.race || 0; st.odds = {}; st.oddsBusy = {}; st.err = '';
+    st.back = opts.back || '‹ シフト';
     st.open = true;
-    try { history.pushState({ okcard: 1 }, ''); } catch (e) { /* 積めない端末は×で閉じる */ }
+    remember();
+    // 更新したあと＝今の履歴がもう出走表の段なら積み直さない（積むと「戻る」1回で閉じなくなる）
+    try {
+      var hs = history.state || {};
+      if (opts.restore && hs.okcard) { /* そのまま使う */ }
+      else { if (opts.restore && hs.rdbover) history.replaceState(null, ''); history.pushState({ okcard: 1 }, ''); }
+    } catch (e) { /* 積めない端末は×で閉じる */ }
     var el = sheet();
     el.hidden = false; el.scrollTop = 0;
     document.documentElement.classList.add('rc-lock');
     load();
   }
 
+  function remember() { u.loc({ card: { date: st.date, place: st.place, race: st.race, back: st.back } }); }
+
   function load() {
     st.loading = true; st.err = ''; draw();
     API.card(st.date, st.place).then(function (d) {
       st.data = d;
-      if (d.state === 'ok' && !st.race) st.race = defaultRace(d);
+      if (d.state === 'ok' && (!st.race || !raceOf(st.race))) { st.race = defaultRace(d); remember(); }
     }).catch(function () { st.err = 'net'; })
       .then(function () { st.loading = false; draw(); loadOdds(st.race); });
   }
@@ -230,7 +241,7 @@ var CARD = (function () {
     var or = el.querySelector('#rc-odds-reload');
     if (or) or.addEventListener('click', function () { loadOdds(st.race, true); });
     el.querySelectorAll('[data-race]').forEach(function (b) {
-      b.addEventListener('click', function () { st.race = +b.dataset.race; draw(); loadOdds(st.race); });
+      b.addEventListener('click', function () { st.race = +b.dataset.race; remember(); draw(); loadOdds(st.race); });
     });
     // 🆕10/16 選手名→選手の詳細（riders.js）。今日の役割・ライン車数・戦法の材料にこのレースの並びを渡す
     el.querySelectorAll('[data-reg]').forEach(function (b) {
