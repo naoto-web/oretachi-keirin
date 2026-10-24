@@ -22,6 +22,8 @@
       <button type="button" class="tab is-on" data-tab="list">選手一覧</button>
       <button type="button" class="tab" data-tab="today">出走表</button>
     </nav>
+    <!-- 管理者だけ（main.js が GASの me.admin を見て出す）。右端＝配信者のタブの位置を1pxも動かさない -->
+    <button type="button" class="gear is-hidden" id="scope-btn" title="誰の書いたものを誰に見せるか（管理者）">⚙ 見せる範囲</button>
   </header>
 
   <main class="cols">
@@ -48,6 +50,11 @@
         <div class="racecard" id="racecard"></div>
       </div>
 
+      <!-- 見せる範囲（管理者だけ・段2 2026-10-20・scope.js） -->
+      <div class="pane is-hidden" id="pane-scope">
+        <div class="scope" id="scope"></div>
+      </div>
+
     </section>
 
     <section class="col-right">
@@ -65,7 +72,7 @@
 <script>
 (function () {
   var CSS = ['css/style.css'];
-  var JS = ['js/config.js', 'js/racetype.js', 'js/bank.js', 'js/api.js', 'js/kana.js', 'js/list.js', 'js/today.js', 'js/detail.js', 'js/main.js'];
+  var JS = ['js/config.js', 'js/racetype.js', 'js/bank.js', 'js/api.js', 'js/kana.js', 'js/list.js', 'js/today.js', 'js/detail.js', 'js/scope.js', 'js/main.js'];
   var shown = false;
   function show() { if (!shown) { shown = true; document.documentElement.classList.add('ready'); } }
   setTimeout(show, 3000);
