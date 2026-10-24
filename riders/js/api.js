@@ -38,6 +38,23 @@ var API = (function () {
     return tokP;
   }
 
+  /** GASが断った理由を人の言葉に */
+  function errText(j, dflt) {
+    var e = j && j.error;
+    if (e === 'forbidden') return 'この操作をする許可がありません。';
+    if (e === 'preview') return '配信者として見ている間は書けません。';
+    return e || dflt;
+  }
+
+  /* ── 自分のこと（名前・管理者か・書けるか）＝選手DBのGASの返事（roster／rider の me）から覚える ──
+     🔑画面側（main.js）はこれを見て「見せる範囲」のボタンを出すかを決める＝そのための往復を増やさない */
+  var meInfo = null, meWatch = [];
+  function noteMe(j) {
+    if (!j || !j.me) return;
+    meInfo = j.me;
+    meWatch.forEach(function (fn) { try { fn(meInfo); } catch (e) { /* 画面側の都合 */ } });
+  }
+
   /** 読み取り。GASのdoGetはリダイレクトを返すのでfetchの既定（follow）に任せる。
       合言葉が古いと断られたら1回だけ取り直してもう一度送る */
   function get(action, params, retried) {
@@ -47,7 +64,27 @@ var API = (function () {
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (j && !j.ok && j.error === 'token' && !retried) return get(action, params, true);
-          if (!j || !j.ok) throw new Error(j && j.error === 'forbidden' ? 'この画面を見る許可がありません。' : ((j && j.error) || '取得に失敗しました'));
+          if (!j || !j.ok) throw new Error(j && j.error === 'forbidden' ? 'この画面を見る許可がありません。' : errText(j, '取得に失敗しました'));
+          noteMe(j);
+          return j;
+        });
+    });
+  }
+
+  /** 書き込み（段2・2026-10-20）。合言葉を付けて text/plain で送る（CORSの事前確認を避ける＝旧 api.js と同じ）。
+      合言葉が古いと断られたら1回だけ取り直してもう一度送る。
+      🔑書いた人は選手DBのGASが合言葉の名前で決める（ここから by は送らない）。プレビュー中はGASが断る（error:'preview'） */
+  function post(action, body, retried) {
+    return getTok(!!retried).then(function (t) {
+      var payload = Object.assign({}, body || {}, { action: action, tok: t });
+      return fetch(CONFIG.GAS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      }).then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j && !j.ok && j.error === 'token' && !retried) return post(action, body, true);
+          if (!j || !j.ok) throw new Error(errText(j, '保存に失敗しました'));
           return j;
         });
     });
@@ -86,12 +123,23 @@ var API = (function () {
 
   return {
     get: get,
+    post: post,
     stats: stats,
     cardList: cardList,
+    me: function () { return meInfo; },
+    onMe: function (fn) { meWatch.push(fn); if (meInfo) fn(meInfo); },
     roster: function (kyuhan) { return get('roster', { kyuhan: kyuhan }); },
     rider: function (reg) { return get('rider', { reg: reg }); },
     comments: function (reg) { return get('comments', { reg: reg }); },
-    ping: function () { return fetch(CONFIG.GAS_URL + '?action=ping').then(function (r) { return r.json(); }); }
+    ping: function () { return fetch(CONFIG.GAS_URL + '?action=ping').then(function (r) { return r.json(); }); },
+    // ── 書く（段2）──
+    addObs: function (obs) { return post('addObs', { obs: obs }); },
+    patchObs: function (id, patch) { return post('patchObs', { id: id, patch: patch }); },
+    saveMemo: function (reg, memo) { return post('saveMemo', { reg: reg, memo: memo }); },
+    syncProfile: function (reg) { return post('syncProfile', { reg: reg }); },
+    // ── 見せる範囲（管理者だけ）──
+    visibility: function () { return get('visibility'); },
+    setVisibility: function (writer, scope) { return post('setVisibility', { writer: writer, scope: scope }); }
   };
 })();
 
