@@ -32,6 +32,8 @@ var MOBILE = (function () {
   function toList() {
     var a = app();
     if (a) a.dataset.m = 'list';
+    // スマホで一覧へ戻った＝選手を閉じた（更新しても開き直さない）。PCは2カラムなので詳細を開いたまま
+    if (isNarrow() && (!a || a.dataset.mode !== 'over')) rloc({ reg: '' });
   }
 
   /** 画面の「← もどる」。over＝アプリに閉じてもらう／積んでいれば戻す／それ以外はその場で一覧へ */
@@ -73,6 +75,7 @@ var MOBILE = (function () {
     if (want === 'list') ensureList();
     if (want === 'scope' && window.SCOPE) SCOPE.ensure();
     MOBILE.toList();
+    rloc({ tab: want });
     backLabel();
   }
 
@@ -139,8 +142,16 @@ var MOBILE = (function () {
     TODAY.bind();
     // 役割別の集計（数MB）は裏で取っておく＝最初の1人目を開くときに待たせない
     API.stats();
+    // 🆕10/24 更新前に見ていた場所へ戻す（［出走表｜見せる範囲］と開いていた選手）
+    var saved = rloc();
+    if (saved.tab === 'today' || saved.tab === 'scope') setTab(saved.tab);
+    var reopen = saved.reg;
     try { if (CONFIG.HOST && CONFIG.HOST.RIDERS) CONFIG.HOST.RIDERS.ready(); } catch (e) { /* 単独で開いた */ }
     // 親が「出走表から開いた」を先に頼んでいなければ、一覧を読む
-    setTimeout(function () { if (a.dataset.mode !== 'over' && a.dataset.tab !== 'today') ensureList(); }, 0);
+    setTimeout(function () {
+      if (a.dataset.mode === 'over') return;
+      if (a.dataset.tab !== 'today') ensureList();
+      if (reopen) DETAIL.open(reopen);
+    }, 0);
   }
 })();
