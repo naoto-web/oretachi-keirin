@@ -17,12 +17,16 @@
      ・選手メモは**書いた人ごと**（GASの memos＝[{by, feature, follow, note…}]）。読む欄は書いた人の名前を必ず添える
        （Naoto「Yが書いたものか自分が書いたものかを区別できるように」）。誰の分が届くかはGASが決める。
      ・CONFIG.CAN_WRITE が false の間は書く道具（編集・保存・観察の追加・配信OK・削除・公式データを更新）を出さない。
-       ⚠️書く側の古いコード（noteField の編集・saveMemo・obsForm）は段2で人ごとの保存に作り直すまで残してある。
+   🔄2026-10-20 段2＝書ける
+     ・書けるか＝CONFIG.CAN_WRITE かつ GASの me.canWrite（プレビュー中＝配信者として見ている間は false）。判定は canWrite()
+     ・選手メモ＝**自分の札だけ書ける**（mine()）。ほかの人の札は名前つきで読むだけ。保存先＝選手DBの『選手メモ_人』（書いた人はGASが合言葉から決める）
+     ・観察ログ＝追加は誰でも（書いた人＝自分）。配信OK・削除は**自分の観察だけ**（管理者は全部）
+     ・見せる範囲（誰の札を誰に見せるか）＝管理者の「見せる範囲」画面（scope.js）。判定はGASの中
 */
 
 var DETAIL = (function () {
 
-  var cur = null;     // { rider, memo, obs, comments, tags }
+  var cur = null;     // { rider, memos:[{by,…}], obs, comments, tags, me:{name,admin,canWrite} }
   var ctx = null;     // 出走表から開いたときの文脈（場・日付・R・役割）
   var statsAll = null;
   var dirty = false;
@@ -78,7 +82,7 @@ var DETAIL = (function () {
         ['name', 'kyuhan', 'pref', 'term', 'age', 'kyaku', 'score'].forEach(function (k) { if (seed[k] && !cur.rider[k]) cur.rider[k] = seed[k]; });
       }
       cur.memos = cur.memos || [];
-      if (!cur.memo) cur.memo = { reg: reg };   // 書く側の古いコード（段2で作り直す）が落ちないように
+      cur.me = cur.me || {};
       cache[reg] = cur;
       statsAll = res[1] || { riders: {} };
       render();
@@ -245,8 +249,8 @@ var DETAIL = (function () {
     h.appendChild(left);
     if (skeleton) return h;
 
-    // 段1（見るだけ）＝「公式データを更新」はシートを書き換えるので出さない。公式の取得日だけ出す
-    if (!CONFIG.CAN_WRITE) {
+    // 書けない人（プレビュー中など）＝「公式データを更新」はシートを書き換えるので出さない。公式の取得日だけ出す
+    if (!canWrite()) {
       if (r.profAt) {
         var ro = el('div', 'dt-head-r');
         ro.appendChild(el('span', 'muted sm', String(r.profAt).indexOf('取得不可') === 0 ? r.profAt : '公式 ' + r.profAt));
@@ -454,22 +458,56 @@ var DETAIL = (function () {
     return wrap;
   }
 
+  /* ── 書く（段2・2026-10-20）── */
+
+  /** この人はいま書けるか（CONFIG と GASの me.canWrite の両方）。プレビュー中は false */
+  function canWrite() { return !!(CONFIG.CAN_WRITE && cur && cur.me && cur.me.canWrite); }
+
+  /** 自分の札（無ければ空の札を作って一覧の先頭に足す＝書き始めたらそこに入る） */
+  function mine() {
+    var name = cur.me.name;
+    for (var i = 0; i < cur.memos.length; i++) if (cur.memos[i].by === name) return cur.memos[i];
+    var m = { by: name };
+    cur.memos.unshift(m);
+    return m;
+  }
+
+  /** その欄の、自分以外の人の分 */
+  function others(field) {
+    return memoVals(field).filter(function (x) { return x.by !== cur.me.name; });
+  }
+
+  /** 自分の名前の札（青）＝「これは自分の分」と一目で分かるように */
+  function meTag() { return el('div', 'note-by is-me', (cur.me.name || '自分') + '（自分）'); }
+
+  /** メモ欄＝ほかの人の分は名前つきで読むだけ・**自分の分だけ書ける**。書けない人は全部読むだけ（段1と同じ） */
   function noteField(field, placeholder, big) {
-    if (!CONFIG.CAN_WRITE) return noteRead(field, big);
-    var wrap = el('div', 'note-field');
+    if (!canWrite()) return noteRead(field, big);
+    var wrap = el('div', 'note-reads');
+    others(field).forEach(function (x) {
+      var one = el('div', 'note-read');
+      one.appendChild(el('div', 'note-by', x.by || '（書いた人不明）'));
+      one.appendChild(el('div', 'note-view' + (big ? ' is-big' : ''), x.val));
+      wrap.appendChild(one);
+    });
+    var me = el('div', 'note-read is-me');
+    me.appendChild(meTag());
+    var f = el('div', 'note-field');
+    me.appendChild(f);
+    wrap.appendChild(me);
     paint();
     return wrap;
 
     function paint() {
-      clear(wrap);
-      var val = String(cur.memo[field] || '');
+      clear(f);
+      var val = String(mine()[field] || '');
 
       if (!editing[field]) {
-        wrap.appendChild(el('div', 'note-view' + (big ? ' is-big' : '') + (val ? '' : ' is-empty'), val || placeholder));
+        f.appendChild(el('div', 'note-view' + (big ? ' is-big' : '') + (val ? '' : ' is-empty'), val || placeholder));
         var b = el('button', 'note-edit', val ? '編集' : '書く');
         b.type = 'button';
         b.onclick = function () { editing[field] = true; paint(); };
-        wrap.appendChild(b);
+        f.appendChild(b);
         return;
       }
 
@@ -477,15 +515,15 @@ var DETAIL = (function () {
       ta.rows = 1;
       ta.placeholder = placeholder;
       ta.value = val;
-      ta.oninput = function () { cur.memo[field] = ta.value; grow(ta); markDirty(); };
+      ta.oninput = function () { mine()[field] = ta.value; grow(ta); markDirty(); };
       // Escで読むモードへ戻す（打ち間違えて開いたときのため）
       ta.onkeydown = function (e) { if (e.key === 'Escape') { editing[field] = false; paint(); } };
-      wrap.appendChild(ta);
+      f.appendChild(ta);
 
       var done = el('button', 'note-edit is-done', '保存して閉じる');
       done.type = 'button';
       done.onclick = function () { editing[field] = false; paint(); saveMemo(false); };
-      wrap.appendChild(done);
+      f.appendChild(done);
 
       grow(ta);
       setTimeout(function () { grow(ta); }, 0);   // まだ画面に載っていないときの保険
@@ -1018,43 +1056,42 @@ var DETAIL = (function () {
   function followSection() {
     var s = section('追走能力', '番手を回ったときの確かさ。配信には出ません。', defFold());
     var wrap = el('div', 'follow');
+    var w = canWrite();
 
-    // 段1（見るだけ）＝書いた人ごとの5段階を名前つきで並べる
-    if (!CONFIG.CAN_WRITE) {
-      var lv = memoVals('follow');
-      if (!lv.length) wrap.appendChild(el('div', 'note-view is-empty', 'まだ書かれていません'));
-      lv.forEach(function (x) {
-        var hit = CONFIG.FOLLOW_LEVELS.filter(function (l) { return l.v === x.val; })[0];
-        var one = el('div', 'follow-read');
-        one.appendChild(el('span', 'note-by', x.by || '（書いた人不明）'));
-        one.appendChild(el('span', 'follow-v', hit ? hit.label : x.val));
-        wrap.appendChild(one);
-      });
-      var stR = stats();
-      var bsR = stR && stR.roles && stR.roles.bante;
-      if (bsR && bsR.n) wrap.appendChild(el('div', 'muted sm', '参考：番手' + bsR.n + '走で3着内 ' + pct(bsR.top3, bsR.n)));
-      wrap.appendChild(el('div', 'lbl', 'そう判断した根拠'));
-      wrap.appendChild(noteField('followNote', ''));
-      s.body.appendChild(wrap);
-      return s.root;
-    }
-
-    var sel = el('select', 'sel');
-    var opt0 = el('option', '', '—');
-    opt0.value = '';
-    sel.appendChild(opt0);
-    CONFIG.FOLLOW_LEVELS.forEach(function (l) {
-      var o = el('option', '', l.label);
-      o.value = l.v;
-      if (String(cur.memo.follow) === l.v) o.selected = true;
-      sel.appendChild(o);
+    // ほかの人（書けない人は全員）の5段階＝名前つきで並べる
+    var lv = w ? others('follow') : memoVals('follow');
+    if (!lv.length && !w) wrap.appendChild(el('div', 'note-view is-empty', 'まだ書かれていません'));
+    lv.forEach(function (x) {
+      var hit = CONFIG.FOLLOW_LEVELS.filter(function (l) { return l.v === x.val; })[0];
+      var one = el('div', 'follow-read');
+      one.appendChild(el('span', 'note-by', x.by || '（書いた人不明）'));
+      one.appendChild(el('span', 'follow-v', hit ? hit.label : x.val));
+      wrap.appendChild(one);
     });
-    sel.onchange = function () { cur.memo.follow = sel.value; markDirty(); };
-    wrap.appendChild(sel);
+
+    // 自分の分＝選んで保存（段2）
+    if (w) {
+      var meRow = el('div', 'follow-read');
+      meRow.appendChild(meTag());
+      var sel = el('select', 'sel');
+      var opt0 = el('option', '', '—');
+      opt0.value = '';
+      sel.appendChild(opt0);
+      CONFIG.FOLLOW_LEVELS.forEach(function (l) {
+        var o = el('option', '', l.label);
+        o.value = l.v;
+        if (String(mine().follow || '') === l.v) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.onchange = function () { mine().follow = sel.value; markDirty(); };
+      meRow.appendChild(sel);
+      wrap.appendChild(meRow);
+    }
 
     var st = stats();
     var bs = st && st.roles && st.roles.bante;
     if (bs && bs.n) wrap.appendChild(el('div', 'muted sm', '参考：番手' + bs.n + '走で3着内 ' + pct(bs.top3, bs.n)));
+    wrap.appendChild(el('div', 'lbl', 'そう判断した根拠'));
     wrap.appendChild(noteField('followNote', 'そう判断した根拠（例：9/12小倉7R 番手から離れた）'));
 
     s.body.appendChild(wrap);
@@ -1215,7 +1252,7 @@ var DETAIL = (function () {
   }
 
   function saveBar() {
-    if (!CONFIG.CAN_WRITE) return el('div', '');   // 段1（見るだけ）＝保存の行は出さない
+    if (!canWrite()) return el('div', '');   // 書けない人＝保存の行は出さない
     var bar = el('div', 'savebar');
     var st = el('span', 'savestate');
     st.dataset.role = 'savestate';
@@ -1248,14 +1285,20 @@ var DETAIL = (function () {
     if (auto && !dirty) return;
     var reg = cur.rider.reg;
     var at = changeSeq;                       // いまの内容の版
-    var mine = ++saveSeq;
+    var my = ++saveSeq;
+    var m = mine();                           // 自分の札＝これだけ送る（ほかの人の札は触れない）
     setSaveState('保存中…');
 
-    API.saveMemo(reg, Object.assign({}, cur.memo)).then(function (j) {
-      if (mine !== saveSeq) return;           // もっと新しい保存が走っている
-      // ⚠️保存中に書き足したぶんを返事で上書きしない。時刻と書き手だけもらう
-      cur.memo.at = j.memo.at;
-      cur.memo.by = j.memo.by;
+    API.saveMemo(reg, Object.assign({}, m)).then(function (j) {
+      if (my !== saveSeq) return;             // もっと新しい保存が走っている
+      // 返事＝この人に見える札の一覧（自分の分が先頭）。
+      // ⚠️自分の札は書きかけを保つ（保存中に書き足したぶんを返事で上書きしない）＝時刻だけもらう
+      var list = (j.memos || []).map(function (x) {
+        if (x.by === cur.me.name) { m.at = x.at; return m; }
+        return x;
+      });
+      if (list.indexOf(m) < 0) list.unshift(m);   // 全部空で保存＝GASは札を返さないが、書く入れ物は持っておく
+      cur.memos = list;
       if (changeSeq === at) {
         dirty = false;
         setSaveState('保存しました');
@@ -1263,9 +1306,9 @@ var DETAIL = (function () {
         setSaveState('未保存');               // 保存中にまた書いた＝次の自動保存に任せる
       }
       if (!auto) toast('保存しました');
-      LIST.touch(reg, { hasMemo: !!(String(cur.memo.feature || '').trim() || String(cur.memo.follow || '').trim()) });
+      LIST.touch(reg, { hasMemo: cur.memos.some(function (x) { return !!(String(x.feature || '').trim() || String(x.follow || '').trim()); }) });
     }).catch(function (e) {
-      if (mine !== saveSeq) return;
+      if (my !== saveSeq) return;
       setSaveState('保存できませんでした');
       toast(e.message, true);
     });
@@ -1279,10 +1322,10 @@ var DETAIL = (function () {
   /* ── ⑤観察ログ ── */
 
   function obsSection() {
-    var s = section('観察ログ', CONFIG.CAN_WRITE
-      ? '1件ずつ積みます。上書きしません。「配信OK」を押したものだけが出力ビューに出ます。'
+    var s = section('観察ログ', canWrite()
+      ? '1件ずつ積みます（新しい順・右下が書いた人）。直せるのは自分の観察だけです。'
       : '1件ずつ積んだ観察です（新しい順・右下が書いた人）。');
-    if (CONFIG.CAN_WRITE) s.body.appendChild(obsForm());
+    if (canWrite()) s.body.appendChild(obsForm());
     var list = el('div', 'obs-list');
     (cur.obs || []).forEach(function (o) { list.appendChild(obsRow(o)); });
     if (!cur.obs || !cur.obs.length) list.appendChild(el('div', 'muted sm', 'まだ観察はありません。'));
@@ -1405,14 +1448,17 @@ var DETAIL = (function () {
 
     var bar = el('div', 'obs-bar');
     bar.appendChild(el('span', 'muted sm', o.at));
-    // 書いた人＝名前を必ず出す（Naoto「誰が書いたか区別できるように」）。段1は見るだけ＝配信OK・削除のボタンは出さない
-    if (!CONFIG.CAN_WRITE) {
+    // 書いた人＝名前を必ず出す（Naoto「誰が書いたか区別できるように」）。
+    // 配信OK・削除のボタン＝自分の観察だけ（管理者は全部）。ほかの人の観察・書けない人＝印と名前だけ
+    var isMe = !!(cur.me && o.by === cur.me.name);
+    var own = canWrite() && (isMe || cur.me.admin);
+    if (!own) {
       if (o.pub) bar.appendChild(el('span', 'obs-pub', '配信OK'));
-      bar.appendChild(el('span', 'note-by', o.by || '（書いた人不明）'));
+      bar.appendChild(el('span', 'note-by' + (isMe ? ' is-me' : ''), o.by || '（書いた人不明）'));
       row.appendChild(bar);
       return row;
     }
-    bar.appendChild(el('span', 'muted sm', o.by));
+    bar.appendChild(el('span', 'note-by' + (isMe ? ' is-me' : ''), o.by || '（書いた人不明）'));
 
     var pub = el('button', 'btn btn-xs' + (o.pub ? ' is-on' : ''), o.pub ? '配信OK' : '配信OKにする');
     pub.type = 'button';
