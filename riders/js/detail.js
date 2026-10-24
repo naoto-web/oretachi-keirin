@@ -54,6 +54,9 @@ var DETAIL = (function () {
   /** seed＝一覧や出走表が持っている名前・級班・得点。GASの返事を待たずに見出しだけ先に出す */
   function open(reg, context, seed) {
     flush();            // 前の選手の書きかけを先に保存する
+    // 選手タブで開いた選手を覚える（更新したら開き直す・10/24）。出走表から重ねて開いた詳細は覚えない
+    var appEl = document.getElementById('app');
+    if (!appEl || appEl.dataset.mode !== 'over') rloc({ reg: reg });
     // スマホは1カラム＝「さがす」画面から「選手」画面へ移る（§35）。PCでは data-m が付くだけで見た目は変わらない
     if (window.MOBILE) MOBILE.toDetail();
     ctx = context || null;
