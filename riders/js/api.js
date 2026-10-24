@@ -143,6 +143,16 @@ var API = (function () {
   };
 })();
 
+/* ══════════ いまどこを見ているか（10/24 Naoto「更新かけたら違うページに飛ぶ」）══════════
+   選手タブの中の［一覧｜出走表｜見せる範囲］と開いている選手。更新したら main.js が戻す。
+   sessionStorage＝アプリを閉じて開き直したときは覚えていない（いつもどおり一覧から） */
+function rloc(patch) {
+  var o = {};
+  try { o = JSON.parse(sessionStorage.getItem('riders:loc') || '{}') || {}; } catch (e) { o = {}; }
+  if (patch) { Object.assign(o, patch); try { sessionStorage.setItem('riders:loc', JSON.stringify(o)); } catch (e) { /* 覚えられなくても動く */ } }
+  return o;
+}
+
 /* ══════════ DOMの小物 ══════════ */
 
 function el(tag, cls, text) {
