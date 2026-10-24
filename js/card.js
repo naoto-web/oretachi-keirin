@@ -151,7 +151,11 @@ var CARD = (function () {
   function table(r) {
     var rs = r.racers;
     var rkS = ranker(rs.map(function (x) { return x.score; }));
-    var rkB = ranker(rs.map(function (x) { return x.st[4]; })), rkH = ranker(rs.map(function (x) { return x.st[5]; })), rkSt = ranker(rs.map(function (x) { return x.st[6]; }));
+    // 🔄10/24 配信者の要望＝決まり手・B・H・S・勝率・3連対率もレース内の最多を赤（2位の青も今までの決まりのまま）
+    //   st＝[逃,捲,差,マ,B,H,S,勝率,2連,3連]（card.gs）
+    var rk = []; for (var c = 0; c < 10; c++) rk[c] = ranker(rs.map(function (x) { return (x.st || [])[c]; }));
+    var rkB = rk[4], rkH = rk[5], rkSt = rk[6];
+    var KIM = [[0, '逃'], [1, '捲'], [2, '差'], [3, 'マ']];
     var link = canRiders();
     return ordered(r).map(function (g) {
       return '<div class="rc-grp">' + (g.label ? '<div class="rc-grp-cap">' + g.label + '</div>' : '') + g.racers.map(function (o) {
@@ -168,7 +172,12 @@ var CARD = (function () {
             '<span class="rc-score num' + rkS(x.score) + '">' + u.esc(x.score || '—') + '</span></div>' +
           '<div class="rc-l2"><span>' + u.esc([x.pref, x.term ? x.term + '期' : '', x.age ? x.age + '歳' : '', x.cls].filter(String).join(' ')) + '</span>' +
             '<span class="rc-bhs num"><i class="' + rkB(s[4]).trim() + '">B' + u.esc(s[4] || '0') + '</i><i class="' + rkH(s[5]).trim() + '">H' + u.esc(s[5] || '0') + '</i><i class="' + rkSt(s[6]).trim() + '">S' + u.esc(s[6] || '0') + '</i></span>' +
-            '<span class="rc-win num">勝率' + (s[7] ? u.esc(s[7]) + '%' : '—') + '</span></div></div></div>';
+            '<span class="rc-win num' + rk[7](s[7]) + '">勝率' + (s[7] ? u.esc(s[7]) + '%' : '—') + '</span></div>' +
+          // 3行目＝決まり手（直近4ヶ月の回数）と3連対率（勝率の真下）
+          '<div class="rc-l3"><span class="rc-bhs num">' + KIM.map(function (k) {
+              return '<i class="' + rk[k[0]](s[k[0]]).trim() + '">' + k[1] + u.esc(s[k[0]] || '0') + '</i>';
+            }).join('') + '</span>' +
+            '<span class="rc-win num' + rk[9](s[9]) + '">3連' + (s[9] ? u.esc(s[9]) + '%' : '—') + '</span></div></div></div>';
       }).join('') + '</div>';
     }).join('');
   }
@@ -209,7 +218,7 @@ var CARD = (function () {
       '<div class="card rc-table">' + table(r) +
       (!r.lines || !r.lines.length ? '<p class="fresh">並び予想がないので車番順です' + (res ? '（発走前に並びを覚えられなかったレースです）' : '') + '。</p>' : '') + '</div>' +
       (res ? resultBox(res) : oddsBox(r.no)) +
-      '<p class="fresh">出走表・オッズ・結果＝keirin.jp（' + hm(d.at) + '取得）。得点・B・H・S の赤＝レース内1位・青＝2位。</p>';
+      '<p class="fresh">出走表・オッズ・結果＝keirin.jp（' + hm(d.at) + '取得）。数字の赤＝レース内1位・青＝2位（決まり手・B・H・S・勝率・3連は直近4ヶ月）。</p>';
   }
 
   function draw() {
