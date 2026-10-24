@@ -42,6 +42,7 @@ var APP = (function () {
 
   function render() {
     renderTabs();
+    u.loc({ tab: tab });   // 更新したらこのタブに戻す（10/24）
     var t = TABS.filter(function (x) { return x.id === tab; })[0];
     var view = document.getElementById('view');
     // 選手タブ＝iframe（riders.js）を #view の外に重ねる。ほかのタブでは隠すだけ（読み直さない）
@@ -115,9 +116,14 @@ var APP = (function () {
     me = m;
     // 通知を押して開いた＝ #tab=share などのタブから（sw.js）
     var h = location.hash.match(/tab=(\w+)/);
-    if (h) { tab = h[1]; try { history.replaceState(null, '', location.pathname); } catch (e) { /* 古い端末はそのまま */ } }
+    var saved = u.loc();
+    if (h) { tab = h[1]; u.loc({ card: null }); try { history.replaceState(null, '', location.pathname); } catch (e) { /* 古い端末はそのまま */ } }
+    else if (saved.tab) tab = saved.tab;   // 🆕10/24 更新した＝さっきまでのタブへ（見られないタブなら renderTabs がシフトに戻す）
     renderWho(m);
     render();
+    // 🆕10/24 更新前に出走表を開いていた＝同じ場・同じレースで開き直す（今日・明日の分だけ＝それより前は出せないので開かない）
+    var c = !h && saved.card;
+    if (c && c.date >= u.ymd(new Date()) && window.CARD) CARD.open(c.date, c.place, { back: c.back, race: c.race, restore: true });
     SHIFT.init(m);
     if (m.share) SHARE.init();   // 共有タブの赤丸（自分が答えていない数）
     if (WISHADMIN.can(m)) WISHADMIN.init();   // 休み希望タブの赤丸（管理者＝配信者から届いた新着）
