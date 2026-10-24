@@ -161,6 +161,13 @@ var TODAY = (function () {
     ensure: function () { if (!state.loaded && !state.loading) load(); },
     ctxFromRace: ctxFromRace,
     markCurrent: function () { /* 出走表はアプリ側＝印を付ける行がない */ },
-    venueNames: function () { return []; }
+    /** 本日・明日に開催している場の名前（観察ログの「場」のプルダウンで上に固める用）。出走表タブをまだ開いていなければ空 */
+    venueNames: function () {
+      var names = [], seen = {};
+      ((state.data && state.data.list) || []).forEach(function (v) {
+        if (v.name && !seen[v.name]) { seen[v.name] = 1; names.push(v.name); }
+      });
+      return names;
+    }
   };
 })();
