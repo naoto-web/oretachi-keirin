@@ -144,7 +144,9 @@ var LIST = (function () {
         if (window.TODAY) TODAY.markCurrent(r.reg);
       };
 
+      // 10/29 Naoto「メモが書いてある選手をもっとわかりやすく」＝名前の前に★
       var main = el('div', 'rrow-main');
+      if (r.hasMemo) main.appendChild(el('span', 'rstar', '★'));
       main.appendChild(el('span', 'rname', r.name || '（氏名未取得）'));
       if (r.kana) main.appendChild(el('span', 'rkana', r.kana));
       row.appendChild(main);
@@ -199,6 +201,8 @@ var LIST = (function () {
         break;
       }
     }
+    // 控えも直す＝出走表の★（card.js が控えを読む）がメモ保存の直後から合う
+    if (state.loaded) writeSnap(state.all);
     render();
     markCurrent(reg);
   }
