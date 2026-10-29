@@ -191,6 +191,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .rrow.is-current { background: var(--panel2); border-color: var(--accent); }
 .rrow-main { display: flex; align-items: baseline; gap: 10px; }
 .rname { font-size: 15px; font-weight: 600; }
+/* メモが書いてある選手の★（10/29）。色はメモのバッジとそろえる・名前にくっつける */
+.rstar { font-size: 15px; color: #e0a800; margin-right: -7px; }
 .rkana { font-size: 11px; color: var(--fg-dim); }
 .rrow-sub { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
 .rrow-marks { display: flex; gap: 5px; margin-top: 4px; }
