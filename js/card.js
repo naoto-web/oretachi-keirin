@@ -159,6 +159,20 @@ var CARD = (function () {
     }).join('') + '</div>';
   }
 
+  /* 10/29 Naoto「メモが書いてある選手に★」を出走表にも。
+     選手タブ（riders/js/list.js）が端末に控えた名簿をそのまま読む＝GASへの往復は増やさない。
+     ⚠️控えのキーは list.js の SNAP と同じ組み立て（鍵の頭6文字＋プレビューの人）。片方だけ直さない。
+     控えが無い（この端末で選手タブを一度も開いていない）ときは★なし */
+  function regKey(reg) { return String(reg || '').replace(/^0+/, ''); }
+  function memoRegs() {
+    var set = {};
+    try {
+      var k = 'riders:roster:' + String(localStorage.getItem('gakuya:key') || '').slice(0, 6) + ':' + (localStorage.getItem('gakuya:as') || '');
+      (JSON.parse(localStorage.getItem(k) || 'null') || []).forEach(function (x) { if (x.hasMemo) set[regKey(x.reg)] = 1; });
+    } catch (e) { /* 控えが読めない＝★なし */ }
+    return set;
+  }
+
   function table(r) {
     var rs = r.racers;
     var rkS = ranker(rs.map(function (x) { return x.score; }));
@@ -168,12 +182,14 @@ var CARD = (function () {
     var rkB = rk[4], rkH = rk[5], rkSt = rk[6];
     var KIM = [[0, '逃'], [1, '捲'], [2, '差'], [3, 'マ']];
     var link = canRiders();
+    var memo = link ? memoRegs() : {};
     return ordered(r).map(function (g) {
       return '<div class="rc-grp">' + (g.label ? '<div class="rc-grp-cap">' + g.label + '</div>' : '') + g.racers.map(function (o) {
         var x = o.x, s = x.st || [];
         // 選手タブを見てよい人＝名前がボタン（登録番号がある行だけ・古い控えの出走表には無い）
         var nm = link && x.reg
-          ? '<button type="button" class="rc-name rc-name-link" data-reg="' + u.esc(x.reg) + '" data-car="' + x.no + '">' + u.esc(x.name) + '</button>'
+          ? '<button type="button" class="rc-name rc-name-link" data-reg="' + u.esc(x.reg) + '" data-car="' + x.no + '">' +
+              (memo[regKey(x.reg)] ? '<span class="rc-star">★</span>' : '') + u.esc(x.name) + '</button>'
           : '<b class="rc-name">' + u.esc(x.name) + '</b>';
         return '<div class="rc-row">' + car(x.no) +
           '<div class="rc-main"><div class="rc-l1">' + nm +
