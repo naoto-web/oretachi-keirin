@@ -1043,6 +1043,8 @@ html.rc-lock, html.rc-lock body { overflow: hidden; }
 .rc-main { min-width: 0; display: grid; gap: 1px; }
 .rc-l1 { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
 .rc-name { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* メモが書いてある選手の★（10/29・選手タブの一覧と同じ金色） */
+.rc-star { color: #e0a800; margin-right: 1px; }
 .rc-hj { font-size: 10px; color: var(--ng); font-weight: 700; white-space: nowrap; }
 .rc-role { font-size: 10px; color: var(--fg-dim); white-space: nowrap; }
 .rc-role.is-seri { color: var(--ng); font-weight: 700; }
