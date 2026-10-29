@@ -22,17 +22,34 @@ var LIST = (function () {
   /** 名簿は全級班を1回だけ取り、しぼりこみは画面側でやる。
       🔑級班を変えるたびにGASを往復すると毎回1.5秒待たされる（9/23 Naoto指摘で細分化したため
         切り替え回数が増える）。837人＝109KBなので、1回取ってしまうほうが速い。 */
+  /* 🐢10/29 Naoto「ページ開くのがめっちゃ時間かかる」＝名簿（約0.5MB）は取るのに5秒ほどかかる。
+     ⇒ 前回の名簿をこの端末に控えておき、開いた瞬間はそれで一覧を出す。裏で最新を取り、届いたら差し替える。
+     🔑控えは鍵の頭6文字＋プレビューの人ごと（見せる範囲で「メモ」「観察」の印が人によって違うため） */
+  var SNAP = 'riders:roster:' + String(CONFIG.APP_KEY || '').slice(0, 6) + ':' + (CONFIG.APP_AS || '');
+  function readSnap() { try { return JSON.parse(localStorage.getItem(SNAP) || 'null'); } catch (e) { return null; } }
+  function writeSnap(list) { try { localStorage.setItem(SNAP, JSON.stringify(list)); } catch (e) { /* 入らなければ控えない＝毎回取る */ } }
+
   function load(kyuhan, force) {
     if (kyuhan) state.kyuhan = kyuhan;
     if (state.loaded && !force) { render(); return Promise.resolve(state.all); }
-    setCount('読み込み中…');
+    var snap = !state.all.length ? readSnap() : null;
+    if (snap && snap.length) {
+      state.all = snap;
+      renderKyuhanOptions();
+      render();
+    } else {
+      setCount('読み込み中…');
+    }
     return API.roster('all').then(function (j) {
       state.all = j.riders || [];
       state.loaded = true;
+      writeSnap(state.all);
       renderKyuhanOptions();
       render();
       return state.all;
     }).catch(function (e) {
+      // 控えで出せている＝そのまま使ってもらう（件数の横に一言だけ）
+      if (snap && snap.length) { setCount(document.getElementById('list-count').textContent + '（最新を取れませんでした）'); return state.all; }
       setCount('読み込めませんでした：' + e.message);
       throw e;
     });
