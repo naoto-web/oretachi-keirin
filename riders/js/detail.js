@@ -1309,7 +1309,10 @@ var DETAIL = (function () {
         setSaveState('未保存');               // 保存中にまた書いた＝次の自動保存に任せる
       }
       if (!auto) toast('保存しました');
-      LIST.touch(reg, { hasMemo: cur.memos.some(function (x) { return !!(String(x.feature || '').trim() || String(x.follow || '').trim()); }) });
+      // GASの memoAny_ とそろえる＝どの欄に書いてあっても★
+      LIST.touch(reg, { hasMemo: cur.memos.some(function (x) {
+        return Object.keys(x).some(function (k) { return k !== 'by' && k !== 'at' && k !== 'reg' && String(x[k] == null ? '' : x[k]).trim(); });
+      }) });
     }).catch(function (e) {
       if (my !== saveSeq) return;
       setSaveState('保存できませんでした');
