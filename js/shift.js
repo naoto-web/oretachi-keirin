@@ -738,6 +738,8 @@ var SHIFT = (function () {
     setMe: function (m) { st.me = m; SHIFT.render(); },
     // 休み希望タブから使う：今のデータ・月の切り替え・日付を選んだ状態にする
     state: function () { return { data: st.data, loading: st.loading, members: (st.me && st.me.members) || [] }; },
+    // 実績タブから使う（11/3）：この月の控え（メモリ＋端末）があればそれ＝出勤日数のために同じ月をGASへ二度聞かない
+    cached: function (ym) { var c = ym ? readCache(ym) : null; return c ? c.d : null; },
     go: function (ym) { st.sel = null; st.selAll = null; return load(ym); },
     select: function (date) { st.sel = date; st.selAll = date; }
   };
