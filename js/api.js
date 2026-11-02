@@ -76,6 +76,10 @@ var API = (function () {
     // 共有タブ（share.js・10/1）。書き込みには as を付ける＝プレビュー中はGASが断る
     share: function () { return get('share'); },
     pl: function () { return get('pl'); },   // ホームの「収支発表（投稿用）」＝文面と月の累計（pl.js・10/2）
+    // ホームの「配信ダイジェスト」（管理者だけ・digest.js・11/1）
+    digest: function (ym) { return get('digest', { ym: ym }); },
+    digestOne: function (id) { return get('digestone', { id: id }); },
+    digestSeen: function (body) { return post('digestseen', body); },
     // 休み希望（10/1）：配信者＝wish・wishMe／管理者＝wishLog・wishSeen（wish.gs）
     wish: function (ym) { return get('wish', { ym: ym }); },
     wishMe: function (body) { return post('wishme', Object.assign({ as: CONFIG.AS }, body)); },
