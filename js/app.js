@@ -50,8 +50,10 @@ var APP = (function () {
     if (t.id === 'shift') { SHIFT.render(); return; }
     // ホーム＝🆕10/2 収支発表（投稿用）のカード（pl.js）＋🆕10/1 通知のカード（push.js）＋準備中の案内
     if (t.id === 'home') {
-      var pl = window.PL && PL.can(me);
-      view.innerHTML = '<h1 class="screen-title">ホーム</h1>' + (pl ? PL.card() : '') + (window.PUSH ? PUSH.homeCard() : '') + '<div class="card"><span class="pill dim" style="justify-self:start">準備中</span><p>' + t.soon + '</p></div>';
+      // 🆕11/1 配信ダイジェスト（digest.js・管理者だけ）＝いちばん上
+      var pl = window.PL && PL.can(me), dg = window.DIGEST && DIGEST.can(me);
+      view.innerHTML = '<h1 class="screen-title">ホーム</h1>' + (dg ? DIGEST.card() : '') + (pl ? PL.card() : '') + (window.PUSH ? PUSH.homeCard() : '') + '<div class="card"><span class="pill dim" style="justify-self:start">準備中</span><p>' + t.soon + '</p></div>';
+      if (dg) DIGEST.mounted();
       if (pl) PL.mounted();   // 置いてから読む（1分以内に読んだものがあればそのまま）
       return;
     }
@@ -164,6 +166,7 @@ var APP = (function () {
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && me && (tab === 'shift' || tab === 'wish')) SHIFT.reload();
     if (document.visibilityState === 'visible' && me && window.PUSH) PUSH.refresh();   // お知らせを既読・数字を合わせる
+    if (document.visibilityState === 'visible' && me && tab === 'home' && window.DIGEST && DIGEST.can(me)) DIGEST.mounted();   // 新しいダイジェストが届いているかも（1分以内なら読まない）
   });
 
   boot();
