@@ -2,7 +2,8 @@
    ・中身＝GASの app=sales（人×記事の集計値）。全員分＝見てよい管理者だけ／🔄9/30 配信者＝本人の行だけ（scope=mine・GASのスイッチがONのとき）
    ・月＝レース日の月。出勤日数＝シフト（実際に誰が出た）。シートが無い月は「その枠の記事が売れた日」で数える
    ・全員＝人ごとの一覧（押すとその人）／個人＝売上（手数料の前・後）・出勤日数・1出勤あたり（昼・夜・グレード）＋記事ごとの一覧
-   ・🔴人名・金額はGASが返す（このファイルに書かない＝公開リポジトリ） */
+   ・🔴人名・金額はGASが返す（このファイルに書かない＝公開リポジトリ）
+   ・🆕11/3 速く＝前回の控えを即出す＋今の月と全部の月を同時に読む＋月切替は通信なし（load の上の説明） */
 var SALES = (function () {
   var u = window.OKL.u;
   var st = { ym: '', who: '', data: {}, shift: {}, loading: false, err: '' };
@@ -20,22 +21,108 @@ var SALES = (function () {
   function dateOf(ym, day) { return ym + '-' + ('0' + day).slice(-2); }
   function dayClass(date) { var dw = u.dow(date); return dw === 0 || u.holidayOf(date) ? 'sun' : dw === 6 ? 'sat' : ''; }
 
-  function load(ym) {
+  /* 🆕11/3 読み込みを速く（Naoto「実績データの表示も遅い」）。以前は GAS を4回、順番に待っていた
+       （今の月→その月のシフト→全部の月→各月のシフト＝1回2〜4秒なので全部そろうまで12秒前後）
+     ①前回の控え（端末）があれば開いた瞬間に出し、裏で最新を取る（ホームの収支発表・シフトの月の控えと同じ型）
+     ②控えが無いときは「今の月」と「全部の月」を同時に送る（順番に待たない）
+     ③月を変えるときは通信しない＝全部の月（all）に各月の行が丸ごと入っているので、そこから組み立てる
+     ④シフトはシフトタブの控え（SHIFT.cached）を先に使う＝同じ月を二度読まない
+     控え＝鍵の頭6文字＋プレビュー中の人ごと（管理者の中身が配信者の画面に混ざらない）。10分以内の控えなら読み直さない */
+  var SNAP_LS = 'gakuya:sales:snap:' + (CONFIG.KEY || '').slice(0, 6) + ':' + (CONFIG.AS || '');
+  var SNAP_FRESH_MS = 10 * 60000;
+  function readSnap() {
+    try {
+      var s = JSON.parse(localStorage.getItem(SNAP_LS) || 'null');
+      if (!s || !s.all || !s.months || !s.months.length) return false;
+      st.all = s.all; st.hits = s.hits || {}; st.buyers = s.buyers || []; st.months = s.months; st.asof = s.asof || '';
+      st.mine = !!s.mine; st.me = s.me || ''; st.shift = s.shift || {}; st.snapAt = s.at || 0;
+      if (st.mine) st.who = st.me;
+      st.ym = s.months[s.months.length - 1].ym;   // 開いたときはいちばん新しい月（GASの既定と同じ）
+      fillData();
+      return true;
+    } catch (e) { return false; }
+  }
+  function saveSnap() {
+    if (!st.all || !st.months) return;
+    try { localStorage.setItem(SNAP_LS, JSON.stringify({ at: st.snapAt || Date.now(), all: st.all, hits: st.hits, buyers: st.buyers, months: st.months, asof: st.asof, mine: st.mine, me: st.me, shift: st.shift })); }
+    catch (e) { /* 端末に置けなくても表示は続く */ }
+  }
+  // どの返事にも入っている共通の情報（月の一覧・本人だけか・名前・「◯日まで」）
+  //   配信者（scope=mine）＝GASが本人の行だけ返す。画面も本人の個人画面だけ（人選び・全員の表・全員の比較は出さない）
+  function take(d) {
+    st.months = d.months; st.mine = d.scope === 'mine'; st.me = d.me;
+    if (st.mine) st.who = d.me;
+    var asofs = (d.months || []).map(function (m) { return m.asof || ''; }).filter(Boolean).sort();
+    if (asofs.length) st.asof = asofs[asofs.length - 1];   // いちばん新しい月の「◯日まで」（売上の無い月を見ていても消さない＝10/6）
+  }
+  // その月の d を all から組み立てる（GASの app=sales&ym=その月 と同じ中身。売上の無い月は予想の成績だけ）
+  function synth(ym) {
+    var m = (st.months || []).filter(function (x) { return x.ym === ym; })[0];
+    if (!m) return null;
+    var d = { ok: true, scope: st.mine ? 'mine' : 'all', me: st.me, ym: ym, months: st.months, asof: '', rows: [] };
+    if (m.nosales) { d.nosales = true; d.hitsAsof = m.hitsAsof; return d; }
+    if (!st.all || !st.all[ym]) return null;
+    d.asof = m.asof; d.rows = st.all[ym];
+    return d;
+  }
+  function fillData() {
+    st.data = {};
+    (st.months || []).forEach(function (m) { var d = synth(m.ym); if (d) st.data[m.ym] = d; });
+  }
+  // シフト＝出勤日数のため。undefined＝まだ／null＝その月のシートが無い（売れた日で数える）
+  var shiftReq = {};
+  function shiftMonths() {   // シフトのシートがある月（シフトタブの中身か、シフトの返事の months から）
+    var a = (((SHIFT.state().data || {}).months) || []).map(function (m) { return m.ym; });
+    return a.concat(st.shiftMonths || []);
+  }
+  function shiftOf(ym) {
+    if (st.shift[ym] !== undefined) return st.shift[ym];
+    var c = SHIFT.cached && SHIFT.cached(ym);   // シフトタブが読んだ控え＝同じ月を二度読まない
+    if (c) { st.shift[ym] = c.rows && !c.namesHidden ? c : null; return st.shift[ym]; }
+    return undefined;
+  }
+  function needShift(ym, force) {
+    if (shiftReq[ym]) return shiftReq[ym];
+    if (!force && shiftOf(ym) !== undefined) return Promise.resolve();
+    return (shiftReq[ym] = API.shift(ym).then(function (s) {
+      // 未公開の月（配信者には空のシフトが返る・10/1〜）は出勤に使わない＝売れた日で数える。シートが無い月は失敗する＝同じ
+      st.shift[ym] = s.rows && !s.namesHidden ? s : null;
+      if (s.months) st.shiftMonths = s.months.map(function (m) { return m.ym; });
+    }, function () { st.shift[ym] = null; }).then(function () { delete shiftReq[ym]; }));
+  }
+  function redraw() { var y = window.scrollY; draw(); window.scrollTo(0, y); }   // 裏で届いた分を描き直しても見ていた位置のまま
+
+  // 控えが無いとき＝今の月と全部の月を同時に送る（今の月＋そのシフトがそろったら描く。全部の月は届いたら描き足す）
+  //   force＝「最新にする」（シフトタブの控えも使わずその月のシフトを読み直す）
+  function load(ym, force) {
     st.loading = true; st.err = ''; draw();
+    loadAll(force);
     API.sales(ym).then(function (d) {
-      st.data[d.ym] = d; st.ym = d.ym; st.months = d.months;
-      if (!d.nosales) st.asof = d.asof;   // 売上が無い月（10/6〜）で note の「◯日まで」を消さない
-      // 配信者（scope=mine）＝GASが本人の行だけ返す。画面も本人の個人画面だけ（人選び・全員の表・全員の比較は出さない）
-      st.mine = d.scope === 'mine';
-      if (st.mine) st.who = d.me;
+      take(d);
+      st.data[d.ym] = d; st.ym = d.ym;
       if (!d.ym || d.nosales) return;      // 売上の無い月はシフトを読まない（出勤日数は売上の画面でしか使わない）
-      // 出勤日数のためにその月のシフト（管理者は全月読める）。シートが無い月は失敗する＝売れた日で数える
-      if (st.shift[d.ym] === undefined) {
-        // 未公開の月（配信者には空のシフトが返る・10/1〜）は出勤に使わない＝売れた日で数える
-        return API.shift(d.ym).then(function (s) { st.shift[d.ym] = s.rows && !s.namesHidden ? s : null; }, function () { st.shift[d.ym] = null; });
-      }
+      return needShift(d.ym, force);
     }).catch(function (e) { st.err = e.code === 'notyet' ? 'notyet' : 'net'; })
       .then(function () { st.loading = false; draw(); });
+  }
+  // 控えを出したあと、裏で最新を取る（全部の月＋見ている月と今月のシフト）。10分以内の控えなら取らない
+  function refresh() {
+    if (st.refreshing) return;
+    if (st.snapAt && Date.now() - st.snapAt < SNAP_FRESH_MS) return;
+    st.refreshing = true; draw();
+    var yms = [st.ym, u.ymd(new Date()).slice(0, 7)].filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+    Promise.all([loadAll(true)].concat(yms.filter(function (ym) { return shiftMonths().indexOf(ym) >= 0; }).map(function (ym) { return needShift(ym, true); })))
+      .then(function () { st.refreshing = false; saveSnap(); redraw(); });
+  }
+  // 月を変える＝all から組み立てた d があれば通信しない。そのとき見ていた位置のまま
+  function goYm(ym) {
+    var y = window.scrollY; st.ym = ym;
+    if (!st.data[ym]) { var s = synth(ym); if (s) st.data[ym] = s; }
+    if (st.data[ym]) {
+      draw(); window.scrollTo(0, y);
+      // その月のシフトをまだ読んでいなければ裏で（出勤日数が「売れた日」→「シフト」に直る）
+      if (!st.data[ym].nosales && shiftOf(ym) === undefined && shiftMonths().indexOf(ym) >= 0) needShift(ym).then(redraw);
+    } else { st.keepY = y; load(ym); }   // 読み込み後に元の位置へ（draw の最後）
   }
 
   // 人ごとの数字。シフトがあれば出勤日＝シフト、無ければ売れた日
@@ -183,7 +270,7 @@ var SALES = (function () {
   function head(d) {
     var months = (st.months || []).slice().reverse();
     return '<div class="title-row"><h1 class="screen-title">実績</h1>' + (window.PRESENCE ? PRESENCE.seg() : '') + '<span class="title-aside">' + (st.loading ? '読み込み中…' : d && d.asof ? u.mdShort(d.asof) + 'までのnote' : d && d.nosales && d.hitsAsof ? u.mdShort(d.hitsAsof) + 'までの予想' : '') +
-      ' <button type="button" class="link-btn" id="s-reload">最新にする</button></span></div>' +
+      ' <button type="button" class="link-btn" id="s-reload"' + (st.refreshing ? ' disabled' : '') + '>' + (st.refreshing ? '更新中…' : '最新にする') + '</button></span></div>' +
       // 🔄10/19 Naoto「←10月→みたいなのが見やすい」＝月は矢印で前後に。行ごと画面の上に貼り付く（下の枠を見ながら月を変えられる）
       //   どの枠も同じ月で動く（枠ごとに別の月にはしない＝同じ画面に違う月が混ざると読み違えるため）
       '<div class="s-pick s-pick-nav">' + ymNav() +      (st.mine ? '' : '<select id="s-who" class="date-input" aria-label="人"><option value="">全員</option>' + members().map(function (m) {
@@ -260,18 +347,23 @@ var SALES = (function () {
 
   // ── グラフ（chart.js）。昼＝黄・夜＝藍（色の見分けは検査済み）・手数料＝灰 ──
   var DAY_C = '#c9a227', NIGHT_C = '#4f5aa8', FEE_C = '#cfcac0', G_C = '#23252a';
-  // 全部の月（グラフ用）を1回だけ読む。出勤日数のため、シートがある月のシフトも読む
-  function loadAll() {
-    if (st.all || st.allLoading) return;
-    st.allLoading = true;
-    API.sales('all').then(function (d) {
+  // 全部の月（グラフ用）を1回だけ読む。出勤日数のため、シートがある月のシフトも読む（まだ無い月だけ・同時に）
+  //   force＝あっても読み直す（裏の最新取り・「最新にする」）。読んでいる途中なら同じ約束を返す＝二重に送らない
+  function loadAll(force) {
+    if (st.allP) return st.allP;
+    if (st.all && !force) return Promise.resolve();
+    st.allErr = false;
+    st.allP = API.sales('all').then(function (d) {
+      take(d);
       st.all = d.all; st.hits = d.hits || {}; st.buyers = d.buyers || [];
-      var have = (((SHIFT.state().data || {}).months) || []).map(function (m) { return m.ym; });
-      var need = Object.keys(d.all).filter(function (ym) { return st.shift[ym] === undefined && have.indexOf(ym) >= 0; });
-      return Promise.all(need.map(function (ym) {
-        return API.shift(ym).then(function (s) { st.shift[ym] = s.rows && !s.namesHidden ? s : null; }, function () { st.shift[ym] = null; });
-      }));
-    }).catch(function () { st.allErr = true; }).then(function () { st.allLoading = false; draw(); });
+      st.snapAt = Date.now();
+      fillData();   // 月を変えたときのために、各月の d をここから組み立てる（通信しない）
+      saveSnap();
+      var hv = shiftMonths();
+      return Promise.all(Object.keys(d.all).filter(function (ym) { return hv.indexOf(ym) >= 0; }).map(function (ym) { return needShift(ym); }))
+        .then(saveSnap);
+    }).catch(function () { st.allErr = true; }).then(function () { st.allP = null; redraw(); });
+    return st.allP;
   }
   function trend(who) {
     return Object.keys(st.all).sort().map(function (ym) { return { ym: ym, s: stats(st.all[ym], who, st.shift[ym] || null, ym) }; });
@@ -600,17 +692,14 @@ var SALES = (function () {
 
   function bind(el) {
     var ym = el.querySelector('#s-ym'), who = el.querySelector('#s-who'), rl = el.querySelector('#s-reload');
-    if (ym) ym.addEventListener('change', function () { st.ym = ym.value; if (st.data[st.ym]) draw(); else load(st.ym); });
-    el.querySelectorAll('[data-ymgo]').forEach(function (b) { b.addEventListener('click', function () {
-      if (!b.dataset.ymgo) return;
-      var y = window.scrollY; st.ym = b.dataset.ymgo;
-      if (st.data[st.ym]) { draw(); window.scrollTo(0, y); } else { st.keepY = y; load(st.ym); }   // 読み込み後に元の位置へ（draw の最後）
-    }); });
+    if (ym) ym.addEventListener('change', function () { goYm(ym.value); });
+    el.querySelectorAll('[data-ymgo]').forEach(function (b) { b.addEventListener('click', function () { if (b.dataset.ymgo) goYm(b.dataset.ymgo); }); });
     // 月の行はロゴの行のすぐ下に貼り付ける（ロゴの行の高さは端末で違う＝測って入れる）
     var nav = el.querySelector('.s-pick-nav'), top = document.querySelector('.top');
     if (nav && top) nav.style.top = top.getBoundingClientRect().height + 'px';
     if (who) who.addEventListener('change', function () { st.who = who.value; draw(); window.scrollTo(0, 0); });
-    if (rl) rl.addEventListener('click', function () { if (st.loading) return; delete st.data[st.ym]; delete st.shift[st.ym]; st.all = null; st.allErr = false; load(st.ym); });
+    // 最新にする＝控えを全部捨てて読み直す（全部の月＋この月のシフト。ほかの月のシフトはシフトタブの控えがあればそれ）
+    if (rl) rl.addEventListener('click', function () { if (st.loading || st.refreshing) return; st.data = {}; st.shift = {}; st.all = null; st.allErr = false; st.snapAt = 0; load(st.ym, true); });
     el.querySelectorAll('[data-mt]').forEach(function (b) { b.addEventListener('click', function () { st.mtKind = b.dataset.mt; draw(); }); });
     el.querySelectorAll('[data-slv]').forEach(function (b) { b.addEventListener('click', function () {
       st.slv = b.dataset.slv;
@@ -637,6 +726,10 @@ var SALES = (function () {
   return {
     // 🔄9/30 全員がこの画面に来る。見せてよいかはGASが決める（だめなら notyet＝準備中の案内）
     can: function (me) { return !!me; },
-    render: function () { if (!st.ym && !st.loading && !st.err) load(''); else draw(); }
+    // 初回＝控えがあればその場で出して裏で最新（10分以内なら取らない）・無ければ読む。2回目以降＝描くだけ（古ければ裏で最新）
+    render: function () {
+      if (!st.ym && !st.loading && !st.err) { if (readSnap()) { draw(); refresh(); } else load(''); }
+      else { draw(); if (st.all && !st.loading) refresh(); }
+    }
   };
 })();
