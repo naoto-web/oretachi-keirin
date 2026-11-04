@@ -723,6 +723,18 @@ h1.brand { margin: 0; line-height: 0; }
   border-radius: 0 0 10px 10px; box-shadow: 0 4px 10px rgba(60, 50, 30, .12);
 }
 .dl-row.is-today:not(.is-open) { background: none; }
+/* 11/5 Naoto「全体で今日がどこかわかりづらい（下線だけ）」→ 個人のカレンダーと同じ黒丸の日付＋左に黒い帯＋薄い灰の地 */
+.dl-row.is-today .dl-d {
+  text-decoration: none; background: #23252a; color: #ffffff;
+  border-radius: 999px; padding: 1px 3px; min-width: 1.2em; text-align: center;
+}
+/* 開いた行は日付を21pxにするが、今日は黒丸で目立つので17pxのまま（21pxだと曜日が次の行に落ちる） */
+.dl-row.is-today.is-open .dl-d { font-size: 17px; }
+.dl-row.is-today .dl-w { color: #23252a; font-weight: 700; }
+/* 帯は行の外（カードの余白8px）に出す＝昼・夜の欄の幅を他の行とそろえたまま */
+.dl-row.is-today:not(.is-open) {
+  background: #eef0f3; box-shadow: -5px 0 0 #23252a;
+}
 /* ── 管理者の編集（9/29 Naoto「スマホでシフトをいじれるようにしたい」・shiftedit.js） ──
    詳細の名前の札は見た目そのままで押せる（button）。押すと下から板が出る＝画面の並びは動かさない */
 button.name.is-edit { font-family: inherit; cursor: pointer; border: 0; line-height: inherit; }
