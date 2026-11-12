@@ -491,6 +491,10 @@ h1.brand { margin: 0; line-height: 0; }
 .seg-sm { padding: 3px; }
 .seg-sm button { padding: 5px 8px; font-size: 14px; }
 .seg-sm .seg-note { display: inline; margin-left: 4px; font-size: 10px; }
+/* 11/12 シフトの月の行＝両脇に「‹ ›」（実績タブと同じ矢印）・高さは月のボタンと同じ */
+.sh-ymrow { display: flex; align-items: stretch; gap: 2px; }
+.sh-ymrow .seg { flex: 1; min-width: 0; }
+.sh-ymrow .s-ymgo { width: 30px; flex: none; padding: 0; height: auto; }
 
 .admin-bar { display: flex; align-items: center; gap: 8px; }
 .admin-bar .focus-sel { margin-left: auto; padding: 4px 6px; font-size: 13px; max-width: 45%; }
