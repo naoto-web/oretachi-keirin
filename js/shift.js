@@ -585,9 +585,10 @@ var SHIFT = (function () {
     var count = 0;
     if (me) rows.forEach(function (r) { if (r.day.indexOf(me) >= 0 || r.night.indexOf(me) >= 0) count++; });
     var lim = me ? limitOf(me) : null;
-    // 月の切り替えは直近だけ（前の月〜）。古い月は出さない
+    // 月の切り替えは直近だけ（2か月前〜）。古い月は出さない
+    //   11/12 要望＝11月になって9月が消えた→前の月までだったのを2か月前までに広げた
     var curYm = u.ymOf(today);
-    var shown = months.filter(function (m) { return m.ym >= u.addMonth(curYm, -1); });
+    var shown = months.filter(function (m) { return m.ym >= u.addMonth(curYm, -2); });
     if (!shown.some(function (m) { return m.ym === d.ym; })) shown.push(months.filter(function (m) { return m.ym === d.ym; })[0]);
 
     // 🔑1画面に収める並び（9/29 Naoto）：見出し行 → 月 → （管理者だけ1行） → カレンダー（凡例と出勤数は枠の中の1行） → その日の詳細
