@@ -589,7 +589,13 @@ var SHIFT = (function () {
     //   11/12 要望＝11月になって9月が消えた→前の月までだったのを2か月前までに広げた
     var curYm = u.ymOf(today);
     var shown = months.filter(function (m) { return m.ym >= u.addMonth(curYm, -2); });
-    if (!shown.some(function (m) { return m.ym === d.ym; })) shown.push(months.filter(function (m) { return m.ym === d.ym; })[0]);
+    // 11/12 両脇の「‹ ›」で1か月ずつさかのぼれる（見せてよい月だけ）。
+    //   直近より古い月を開いたら、ボタンはその月を真ん中にした3か月に入れ替える
+    var at0 = -1;
+    months.forEach(function (m, i) { if (m.ym === d.ym) at0 = i; });
+    if (!shown.some(function (m) { return m.ym === d.ym; })) shown = months.slice(Math.max(0, at0 - 1), at0 + 2);
+    var prevYm = at0 > 0 ? months[at0 - 1].ym : '';
+    var nextYm = at0 >= 0 && at0 < months.length - 1 ? months[at0 + 1].ym : '';
 
     // 🔑1画面に収める並び（9/29 Naoto）：見出し行 → 月 → （管理者だけ1行） → カレンダー（凡例と出勤数は枠の中の1行） → その日の詳細
     //   「シフト」の見出しの位置は管理者・配信者で同じ（管理者の追加分は月の切り替えより下にだけ入る）
@@ -604,9 +610,13 @@ var SHIFT = (function () {
       '<span class="title-aside">' + (EDIT.pending() ? '<b class="saving">保存中…</b>' : st.loading ? '読み込み中…' : at) + ' <button type="button" class="link-btn" id="reload">最新にする</button></span></div>' +
       // 🆕10/1 通知をオンにする案内（オンにするか×で閉じるまで・push.js）
       (window.PUSH ? PUSH.banner() : '') +
+      '<div class="sh-ymrow">' +
+      '<button type="button" class="s-ymgo" data-ym="' + prevYm + '"' + (prevYm ? '' : ' disabled') + ' aria-label="前の月">‹</button>' +
       '<div class="seg seg-sm" role="group" aria-label="月">' + shown.map(function (m) {
         return '<button type="button" data-ym="' + m.ym + '" aria-pressed="' + (m.ym === d.ym) + '">' + u.monthLabel(m.ym) + (!m.published ? '<small class="seg-note">作成中</small>' : '') + '</button>';
       }).join('') + '</div>' +
+      '<button type="button" class="s-ymgo" data-ym="' + nextYm + '"' + (nextYm ? '' : ' disabled') + ' aria-label="次の月">›</button>' +
+      '</div>' +
       (isAdmin() ? publishBar(d) : '') +
       // 🔄10/1 配信者にも未公開の月のカレンダー（開催・Gバッジ）を見せる。誰がいつ出るかはGASが空で返す
       (!isAdmin() && !d.published ? '<p class="sub unpub-note">' + u.monthLabel(d.ym) + 'のシフトは作成中です（開催とグレードだけ見られます）</p>' : '') +
@@ -631,7 +641,7 @@ var SHIFT = (function () {
   function bind(el) {
     var q = function (s) { return el.querySelector(s); };
     if (q('#reload')) q('#reload').addEventListener('click', function () { if (!st.loading) load(st.ym); });
-    el.querySelectorAll('[data-ym]').forEach(function (b) { b.addEventListener('click', function () { st.sel = null; st.selAll = null; load(b.dataset.ym); }); });
+    el.querySelectorAll('[data-ym]').forEach(function (b) { b.addEventListener('click', function () { if (!b.dataset.ym) return; st.sel = null; st.selAll = null; load(b.dataset.ym); }); });
     el.querySelectorAll('.scal-cell[data-date]').forEach(function (b) { b.addEventListener('click', function () { st.sel = b.dataset.date; render(el); }); });
     // 全体の一覧：行を押すとその下に詳細を開く・同じ行をもう一度押すと閉じる
     if (q('#all-edit')) q('#all-edit').addEventListener('click', function () { st.editAll = !st.editAll; render(el); });
