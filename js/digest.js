@@ -37,6 +37,23 @@ var DIGEST = (function () {
       '</button>';
   }
 
+  // 🆕11/13 まだできていない配信を1行ずつ（字幕待ち＝放っておいてよい／⚠️＝止まっているかも）。GASの d.wait
+  //   late＝PCのタスクから14時間以上届いていない＝タスク自体が止まっているかも
+  function waitBlock(d) {
+    var w = d && d.wait;
+    if (!w) return '';
+    var lines = (w.rows || []).map(function (x) {
+      var stuck = x.state === 'stuck';
+      return '<li class="dg-wait' + (stuck ? ' is-stuck' : '') + '">' + (stuck ? '⚠️ ' : '⏳ ') + '<b>' + label(x) + '</b>：' +
+        (stuck ? '止まっているかも（' + u.esc(x.why) + '）' : u.esc(x.why) + '（遅くとも' + u.esc(x.due) + 'に出ます）') + '</li>';
+    });
+    if (w.late) {
+      var t = new Date(w.at);
+      lines.unshift('<li class="dg-wait is-stuck">⚠️ PCのタスクから連絡がありません（最後 ' + (t.getMonth() + 1) + '/' + t.getDate() + ' ' + u.pad(t.getHours()) + ':' + u.pad(t.getMinutes()) + '）＝止まっているかも</li>');
+    }
+    return lines.length ? '<ul class="dg-waits">' + lines.join('') + '</ul>' : '';
+  }
+
   /* ── ホームのカード ── */
   function card() {
     var d = st.data, body = '';
@@ -45,7 +62,7 @@ var DIGEST = (function () {
         : '<p class="sub">取れませんでした。電波のよいところでもう一度。</p><button type="button" class="btn ghost btn-sm" data-dg-reload>もう一度</button>';
     } else {
       var un = d.unread || [];
-      body = (un.length
+      body = waitBlock(d) + (un.length
           ? '<p class="sub">未読 <b class="dg-count">' + un.length + '本</b>' + (st.cached ? '（前回の控え）' : '') + (st.loading ? '・読み込み中…' : '') + '</p>' +
             '<div class="dg-list">' + un.slice(0, 6).map(function (x) { return row(x, true); }).join('') + '</div>' +
             (un.length > 6 ? '<p class="fresh">ほか ' + (un.length - 6) + '本は「一覧」から。</p>' : '')
@@ -188,10 +205,11 @@ var DIGEST = (function () {
     return head('配信ダイジェスト', unN ? '未読 ' + unN + '本' : '未読なし',
         '<button type="button" class="link-btn" data-dg-month-reload>' + (st.monthBusy ? '読み込み中…' : '最新にする') + '</button>') +
       nav +
+      waitBlock(d || st.data) +
       (list ? (list.length ? '<div class="card dg-list">' + list.map(function (x) { return row(x, true); }).join('') + '</div>' : '<p class="sub">この月のダイジェストはありません。</p>')
             : '<p class="sub">読み込んでいます…</p>') +
       (unN ? '<div class="btn-row"><button type="button" class="btn ghost" data-dg-allseen>すべて既読にする</button></div>' : '') +
-      '<p class="fresh">毎日7時・19時にPCが作ったものが届きます。夜の配信は字幕の遅れで翌日19時か翌々日の朝になります。</p>';
+      '<p class="fresh">毎日7時・19時にPCが作ったものが届きます。夜の配信は字幕の遅れで翌日19時か翌々日の朝になります。⏳は放っておいて大丈夫・⚠️が出たらクロコへ。</p>';
   }
   function itemView() {
     var x = st.item || {};
