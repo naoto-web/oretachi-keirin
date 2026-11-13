@@ -80,6 +80,7 @@ var API = (function () {
     digest: function (ym) { return get('digest', { ym: ym }); },
     digestOne: function (id) { return get('digestone', { id: id }); },
     digestSeen: function (body) { return post('digestseen', body); },
+    digestFb: function (body) { return post('digestfb', body); },
     // 休み希望（10/1）：配信者＝wish・wishMe／管理者＝wishLog・wishSeen（wish.gs）
     wish: function (ym) { return get('wish', { ym: ym }); },
     wishMe: function (body) { return post('wishme', Object.assign({ as: CONFIG.AS }, body)); },
