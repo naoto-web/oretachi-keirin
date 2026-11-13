@@ -32,7 +32,8 @@ var DIGEST = (function () {
   function warnPill(x) { return x.warn ? '<span class="dg-warn-pill">⚠️' + x.warn + '</span>' : ''; }
   function row(x, withGist) {
     return '<button type="button" class="dg-row' + (x.seen ? ' is-seen' : '') + '" data-dg-open="' + u.esc(x.id) + '">' +
-      '<span class="dg-row-head">' + (x.seen ? '' : '<i class="dg-dot" aria-label="未読"></i>') + '<b>' + label(x) + '</b>' + warnPill(x) + '</span>' +
+      '<span class="dg-row-head">' + (x.seen ? '' : '<i class="dg-dot" aria-label="未読"></i>') + '<b>' + label(x) + '</b>' + warnPill(x) +
+        (x.all ? '<span class="dg-all-pill">全員版</span>' : '') + '</span>' +
       (withGist && x.gist.length ? '<span class="dg-gist">' + x.gist.map(function (g) { return '<span>' + inline(g) + '</span>'; }).join('') + '</span>' : '') +
       '</button>';
   }
@@ -134,7 +135,7 @@ var DIGEST = (function () {
     // ホームから直接開いた＝下に一覧の段を積んでから本文の段（「戻る」1回で一覧・2回でホーム）
     show('item');
     try { history.pushState({ okdg: 'item' }, ''); } catch (e) { /* 戻るは×で */ }
-    st.item = { id: id, body: null }; st.itemBusy = true;
+    st.item = { id: id, body: null }; st.itemBusy = true; st.view = 'all';
     sheet().scrollTop = 0;
     draw();
     API.digestOne(id).then(function (j) {
@@ -189,6 +190,78 @@ var DIGEST = (function () {
     return out.join('');
   }
 
+  /* ── 🆕11/13 全員版（配信者にも見せる予定の新しい形・確認中は管理者だけ）──
+     ・見出しは7つ。「ほかのくだり」は畳む
+     ・👍 👎 💬 は、GASが fb を返した人にだけ出す（付けられる人はGAS側で1人に決めている）
+       付ける単位＝的中・トークの上位は題つきの1かたまり、それ以外は1行。目印＝行の本文から作る短い符号 */
+  var fbMeta = {};
+  function fbKey(s) {
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  function plain(s) { return String(s).replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\*\*/g, ''); }
+  function fbInner(k) {
+    var f = (st.item && st.item.fb && st.item.fb[k]) || {};
+    return '<button type="button" class="dg-fb-b' + (f.v === 1 ? ' is-on' : '') + '" data-dg-fbv="1" aria-label="よかった">👍</button>' +
+      '<button type="button" class="dg-fb-b' + (f.v === -1 ? ' is-on is-bad' : '') + '" data-dg-fbv="-1" aria-label="いらない">👎</button>' +
+      '<button type="button" class="dg-fb-b' + (f.c ? ' is-on' : '') + '" data-dg-fbc aria-label="コメント">💬</button>' +
+      (f.c ? '<span class="dg-fb-c">' + u.esc(f.c) + '</span>' : '');
+  }
+  function fbBar(sec, raw) {
+    if (!st.item || !st.item.fb) return '';
+    var k = fbKey(raw);
+    fbMeta[k] = { sec: sec, text: plain(raw).slice(0, 200) };
+    return '<span class="dg-fb" data-dg-fb="' + k + '">' + fbInner(k) + '</span>';
+  }
+  function fbSave(k, el) {
+    var f = st.item.fb[k] || {}, m = fbMeta[k] || {};
+    if (el) el.innerHTML = fbInner(k);
+    API.digestFb({ id: st.item.id, key: k, v: f.v || 0, c: f.c || '', sec: m.sec || '', text: m.text || '' })
+      .then(function (j) { if (!j || !j.ok) throw new Error('ng'); })
+      .catch(function () { APP.toast('評価を保存できませんでした。もう一度押してください', true); });
+  }
+  function renderAll(md) {
+    fbMeta = {};
+    var lines = String(md || '').split('\n'), out = [], inList = false, inMore = false, sec = '', block = false;
+    var closeList = function () { if (inList) { out.push('</ul>'); inList = false; } };
+    var closeAll = function () { closeList(); if (inMore) { out.push('</details>'); inMore = false; } };
+    lines.forEach(function (line, i) {
+      var l = line.replace(/\s+$/, '');
+      if (!l || /^---+$/.test(l) || /^# /.test(l)) { closeList(); return; }
+      var h2 = l.match(/^##\s+(.+)$/);
+      if (h2) {
+        closeAll(); sec = plain(h2[1]); block = /^(🎯|🎉)/.test(sec);
+        out.push('<h3 class="dg-h dg-h-all">' + inline(h2[1]) + '</h3>');
+        return;
+      }
+      var h3 = l.match(/^###\s+(.+)$/);
+      if (h3) {
+        closeAll();
+        if (/^ほかのくだり/.test(h3[1])) {
+          var n = 0;
+          for (var j = i + 1; j < lines.length && !/^#{2,3}\s/.test(lines[j]); j++) if (/^[-*]\s+/.test(lines[j])) n++;
+          out.push('<details class="dg-more"><summary>ほかのくだり（' + n + '）</summary>');
+          inMore = true; block = false;
+        } else {
+          out.push('<h4 class="dg-h4">' + inline(h3[1]) + '</h4>' + (block ? fbBar(sec, h3[1]) : ''));
+        }
+        return;
+      }
+      var li = l.match(/^(\s*)[-*]\s+(.+)$/);
+      if (li) {
+        if (!inList) { out.push('<ul class="dg-ul">'); inList = true; }
+        var sub = li[1].length >= 2;
+        out.push('<li' + (sub ? ' class="is-sub"' : '') + '>' + inline(li[2]) + (!sub && !block ? fbBar(sec, li[2]) : '') + '</li>');
+        return;
+      }
+      closeList();
+      out.push('<p class="dg-p">' + inline(l) + '</p>');
+    });
+    closeAll();
+    return out.join('');
+  }
+
   function head(title, sub, right) {
     return '<div class="rc-top"><button type="button" class="rc-back" data-dg-back>' + (st.mode === 'item' ? '‹ 一覧' : '‹ ホーム') + '</button>' +
       '<div class="rc-title"><b>' + title + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>' + (right || '<span></span>') + '</div>';
@@ -217,9 +290,17 @@ var DIGEST = (function () {
       return head('配信ダイジェスト', '', '') + '<p class="sub">' + (x.err ? '取れませんでした。戻ってもう一度開いてください。' : '読み込んでいます…') + '</p>';
     }
     var yt = x.video ? '<a class="link-btn" href="https://youtu.be/' + encodeURIComponent(x.video) + '" target="_blank" rel="noopener">YouTube</a>' : '';
-    return head(label(x) + warnPill(x), u.esc(x.title || ''), yt) +
-      '<div class="card dg-body">' + render(x.body) + '</div>' +
-      '<p class="fresh">' + u.esc(x.gen ? '生成：' + x.gen : '') + '。固有名詞は自動字幕なので化けることがあります。判断が要る話は時刻のリンクから元の映像で。</p>';
+    // 🆕11/13 全員版がある配信＝上の切り替えで［全員版｜管理者向け］。最初は全員版
+    var isAll = !!x.allBody && st.view !== 'adm';
+    var tabs = x.allBody
+      ? '<div class="dg-tabs"><button type="button" class="' + (isAll ? 'is-on' : '') + '" data-dg-view="all">全員版（確認中）</button>' +
+        '<button type="button" class="' + (isAll ? '' : 'is-on') + '" data-dg-view="adm">管理者向け</button></div>'
+      : '';
+    return head(label(x) + warnPill(x), u.esc(x.title || ''), yt) + tabs +
+      '<div class="card dg-body' + (isAll ? ' dg-body-all' : '') + '">' + (isAll ? renderAll(x.allBody) : render(x.body)) + '</div>' +
+      '<p class="fresh">' + (isAll ? '全員版は確認中です。いまは管理者にだけ見えています。' + (x.fb ? '👍＝拾ってくれてよかった／👎＝これはいらない／まちがいは💬へ。' : '')
+                                   : u.esc(x.gen ? '生成：' + x.gen + '。' : '')) +
+      '固有名詞は自動字幕なので化けることがあります。判断が要る話は時刻のリンクから元の映像で。</p>';
   }
   function draw() {
     if (!st.open) return;
@@ -232,6 +313,21 @@ var DIGEST = (function () {
     if (o) { openItem(o.dataset.dgOpen); return; }
     if (t.closest('[data-dg-list]')) { openList(st.data && st.data.ym); return; }
     if (t.closest('[data-dg-back]')) { back(); return; }
+    var vw = t.closest('[data-dg-view]');
+    if (vw) { st.view = vw.dataset.dgView; draw(); return; }
+    // 全員版の 👍 👎 💬（同じボタンをもう一度＝取り消し）
+    var bar = t.closest('[data-dg-fb]');
+    if (bar && st.item && st.item.fb) {
+      var k = bar.dataset.dgFb, f = st.item.fb[k] || (st.item.fb[k] = { v: 0, c: '' });
+      var vb = t.closest('[data-dg-fbv]');
+      if (vb) { var nv = +vb.dataset.dgFbv; f.v = f.v === nv ? 0 : nv; fbSave(k, bar); return; }
+      if (t.closest('[data-dg-fbc]')) {
+        var c = prompt('コメント（空にすると消えます）', f.c || '');
+        if (c === null) return;
+        f.c = c.trim().slice(0, 500); fbSave(k, bar);
+      }
+      return;
+    }
     var y = t.closest('[data-dg-ym]');
     if (y && y.dataset.dgYm) { st.ym = y.dataset.dgYm; st.month = null; draw(); loadMonth(st.ym); return; }
     if (t.closest('[data-dg-month-reload]')) { loadMonth(st.ym); return; }
