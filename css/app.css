@@ -1400,3 +1400,19 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .dg-ul li.is-warn { background: var(--ng-soft); border-radius: 6px; padding: 4px 8px; margin-left: -18px; list-style: none; }
 .dg-p { margin: 0; }
 .dg-body a { color: var(--accent); }
+/* 🆕11/13 全員版（確認中）＝切り替え・小見出し・「ほかのくだり」の折りたたみ・👍 👎 💬 */
+.dg-all-pill { font-size: 11px; font-weight: 700; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 7px; }
+.dg-tabs { display: flex; gap: 0; margin: 0 0 8px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.dg-tabs button { flex: 1; border: 0; background: var(--panel2); color: var(--fg-dim); font: inherit; font-size: 13px; padding: 8px 4px; }
+.dg-tabs button.is-on { background: var(--accent); color: #fff; font-weight: 700; }
+.dg-h-all { font-size: 15px; margin-top: 16px; }
+.dg-h4 { margin: 10px 0 0; font-size: 14px; font-weight: 700; color: var(--fg); }
+.dg-body-all .dg-ul li.is-sub { margin-left: 14px; list-style: circle; color: var(--fg-dim); }
+.dg-more { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.dg-more summary { font-weight: 700; font-size: 13px; color: var(--accent); cursor: pointer; }
+.dg-more[open] summary { margin-bottom: 6px; }
+.dg-fb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 3px; }
+.dg-fb-b { border: 1px solid var(--line); background: var(--panel2); border-radius: 999px; font-size: 12px; line-height: 1; padding: 4px 9px; opacity: .55; }
+.dg-fb-b.is-on { opacity: 1; border-color: var(--accent); background: #fff; }
+.dg-fb-b.is-bad { border-color: var(--ng); background: var(--ng-soft); }
+.dg-fb-c { flex-basis: 100%; font-size: 12px; color: var(--fg-dim); background: var(--panel2); border-radius: 6px; padding: 3px 8px; }
