@@ -1384,6 +1384,11 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .dg-slot { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 0 7px; margin-left: 4px; vertical-align: 2px; color: #fff; }
 .dg-slot.day { background: var(--day); }
 .dg-slot.night { background: var(--night); }
+/* 11/13 まだできていない配信の1行（⏳字幕待ち＝灰色の控えめ／⚠️止まっているかも＝赤） */
+.dg-waits { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 4px; }
+.dg-wait { font-size: 12px; color: var(--fg-dim); background: var(--panel2); border-radius: 8px; padding: 5px 8px; line-height: 1.5; }
+.dg-wait b { color: var(--fg); }
+.dg-wait.is-stuck { color: var(--ng); background: var(--ng-soft); font-weight: 700; }
 .dg-warn-pill { font-size: 11px; font-weight: 700; color: var(--ng); background: var(--ng-soft); border-radius: 999px; padding: 0 7px; }
 .dg-gist { display: grid; gap: 2px; font-size: 12px; color: var(--fg-dim); line-height: 1.5; }
 .dg-gist span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
