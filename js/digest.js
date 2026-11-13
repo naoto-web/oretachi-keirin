@@ -209,7 +209,7 @@ var DIGEST = (function () {
       (list ? (list.length ? '<div class="card dg-list">' + list.map(function (x) { return row(x, true); }).join('') + '</div>' : '<p class="sub">この月のダイジェストはありません。</p>')
             : '<p class="sub">読み込んでいます…</p>') +
       (unN ? '<div class="btn-row"><button type="button" class="btn ghost" data-dg-allseen>すべて既読にする</button></div>' : '') +
-      '<p class="fresh">毎日7時・19時にPCが作ったものが届きます。夜の配信は字幕の遅れで翌日19時か翌々日の朝になります。⏳は放っておいて大丈夫・⚠️が出たらクロコへ。</p>';
+      '<p class="fresh">毎日7時・19時にPCが作ったものが届きます。夜の配信は字幕の遅れで翌日19時か翌々日の朝になります。⏳は放っておいて大丈夫です。</p>';
   }
   function itemView() {
     var x = st.item || {};
