@@ -1,14 +1,16 @@
 /* digest.js — ホームの「配信ダイジェスト」（2026-11-01 Naoto「PCで見るよりアプリで・どこまで見たか分からなくなる」）
    ・PCの配信ダイジェスト（md）をGASが持っている。ここは「未読の一覧」「月ごとの一覧」「本文」を見せるだけ
    ・既読は人ごと・GAS側＝スマホでもPCでも同じ。本文を開いたら既読／「すべて既読にする」
-   ・見られる人＝管理者だけ（GASの me.digest）
+   ・見られる人＝管理者（GASの me.digest）。🆕11/15 公開の日を入れたら配信者も＝その日以降の「全員版」だけ
+     （管理者向けの本文・要点・評価・「まだできていない配信」はGASが配信者に返さない。画面は返ってきたものを出すだけ）
    ・🔴中身（配信者の発言・お金の話）はGASが返す＝このファイルに書かない（公開リポジトリ）
    仕様の正本＝仕事/OKLチーム/スマホアプリ/要件定義_配信ダイジェスト_v1.md */
 var DIGEST = (function () {
   var u = window.OKL.u;
   var st = { data: null, loading: false, err: '', at: 0, cached: false,
              open: false, mode: 'list', ym: '', month: null, monthBusy: false, item: null, itemBusy: false };
-  var LS = 'gakuya:digest:' + (CONFIG.KEY || '').slice(0, 6);
+  // 控えは「配信者として見る」の相手ごとに分ける（管理者の控えと配信者向けの中身をまぜない）
+  var LS = 'gakuya:digest:' + (CONFIG.KEY || '').slice(0, 6) + (CONFIG.AS ? ':' + CONFIG.AS : '');
   try { var c0 = JSON.parse(localStorage.getItem(LS) || 'null'); if (c0 && c0.d) { st.data = c0.d; st.at = c0.at || 0; st.cached = true; } } catch (e) { /* 控えが無くても読む */ }
 
   function can(me) { return !!(me && me.digest); }
@@ -282,23 +284,33 @@ var DIGEST = (function () {
       (list ? (list.length ? '<div class="card dg-list">' + list.map(function (x) { return row(x, true); }).join('') + '</div>' : '<p class="sub">この月のダイジェストはありません。</p>')
             : '<p class="sub">読み込んでいます…</p>') +
       (unN ? '<div class="btn-row"><button type="button" class="btn ghost" data-dg-allseen>すべて既読にする</button></div>' : '') +
-      '<p class="fresh">毎日7時・19時にPCが作ったものが届きます。夜の配信は字幕の遅れで翌日19時か翌々日の朝になります。⏳は放っておいて大丈夫です。</p>';
+      '<p class="fresh">' + ((d || st.data || {}).adm === false
+        ? '毎日7時ごろと19時ごろに新しい分が届きます。夜の配信は字幕の遅れで、翌日の夜か翌々日の朝になります。'
+        : '毎日7時・19時にPCが作ったものが届きます。夜の配信は字幕の遅れで翌日19時か翌々日の朝になります。⏳は放っておいて大丈夫です。') + '</p>';
   }
   function itemView() {
     var x = st.item || {};
-    if (st.itemBusy || !x.body) {
+    if (st.itemBusy || (!x.body && !x.allBody)) {
       return head('配信ダイジェスト', '', '') + '<p class="sub">' + (x.err ? '取れませんでした。戻ってもう一度開いてください。' : '読み込んでいます…') + '</p>';
     }
     var yt = x.video ? '<a class="link-btn" href="https://youtu.be/' + encodeURIComponent(x.video) + '" target="_blank" rel="noopener">YouTube</a>' : '';
     // 🆕11/13 全員版がある配信＝上の切り替えで［全員版｜管理者向け］。最初は全員版
-    var isAll = !!x.allBody && st.view !== 'adm';
-    var tabs = x.allBody
-      ? '<div class="dg-tabs"><button type="button" class="' + (isAll ? 'is-on' : '') + '" data-dg-view="all">全員版（確認中）</button>' +
+    //   🆕11/15 配信者には全員版だけが届く（x.body が空）＝切り替えは出さない
+    var isAll = !!x.allBody && (st.view !== 'adm' || !x.body);
+    var tabs = x.allBody && x.body
+      ? '<div class="dg-tabs"><button type="button" class="' + (isAll ? 'is-on' : '') + '" data-dg-view="all">全員版</button>' +
         '<button type="button" class="' + (isAll ? '' : 'is-on') + '" data-dg-view="adm">管理者向け</button></div>'
       : '';
+    // 管理者にだけ：この回の全員版が配信者にも見えているか
+    var who = '';
+    if (isAll && x.adm) {
+      who = x.openFrom && x.date >= x.openFrom ? 'この回の全員版は配信者にも見えています。'
+        : (x.openFrom ? 'この回の全員版は管理者にだけ見えています（配信者に見えるのは ' + u.md(x.openFrom) + ' 以降の配信）。'
+                      : '全員版は、いまは管理者にだけ見えています。');
+    }
     return head(label(x) + warnPill(x), u.esc(x.title || ''), yt) + tabs +
       '<div class="card dg-body' + (isAll ? ' dg-body-all' : '') + '">' + (isAll ? renderAll(x.allBody) : render(x.body)) + '</div>' +
-      '<p class="fresh">' + (isAll ? '全員版は確認中です。いまは管理者にだけ見えています。' + (x.fb ? '👍＝拾ってくれてよかった／👎＝これはいらない／まちがいは💬へ。' : '')
+      '<p class="fresh">' + (isAll ? who + (x.fb ? '👍＝拾ってくれてよかった／👎＝これはいらない／まちがいは💬へ。' : '')
                                    : u.esc(x.gen ? '生成：' + x.gen + '。' : '')) +
       '固有名詞は自動字幕なので化けることがあります。判断が要る話は時刻のリンクから元の映像で。</p>';
   }
