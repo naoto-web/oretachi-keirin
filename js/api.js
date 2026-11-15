@@ -79,7 +79,8 @@ var API = (function () {
     // ホームの「配信ダイジェスト」（管理者だけ・digest.js・11/1）
     digest: function (ym) { return get('digest', { ym: ym }); },
     digestOne: function (id) { return get('digestone', { id: id }); },
-    digestSeen: function (body) { return post('digestseen', body); },
+    // 既読には as を付ける＝「配信者として見る」の間はGASが書かない（11/15）
+    digestSeen: function (body) { return post('digestseen', Object.assign({ as: CONFIG.AS }, body)); },
     digestFb: function (body) { return post('digestfb', body); },
     // 休み希望（10/1）：配信者＝wish・wishMe／管理者＝wishLog・wishSeen（wish.gs）
     wish: function (ym) { return get('wish', { ym: ym }); },
