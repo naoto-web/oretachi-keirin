@@ -308,8 +308,14 @@ var DIGEST = (function () {
         : (x.openFrom ? 'この回の全員版は管理者にだけ見えています（配信者に見えるのは ' + u.md(x.openFrom) + ' 以降の配信）。'
                       : '全員版は、いまは管理者にだけ見えています。');
     }
+    // 🆕11/16 管理者にだけ：読んだ人（既読にした人・付いた順）。GASが readers を返したときだけ出す
+    var readers = '';
+    if (x.adm && Array.isArray(x.readers)) {
+      readers = '<p class="fresh">読んだ人：' + (x.readers.length ? x.readers.map(u.esc).join('・') : 'まだいません') + '</p>';
+    }
     return head(label(x) + warnPill(x), u.esc(x.title || ''), yt) + tabs +
       '<div class="card dg-body' + (isAll ? ' dg-body-all' : '') + '">' + (isAll ? renderAll(x.allBody) : render(x.body)) + '</div>' +
+      readers +
       '<p class="fresh">' + (isAll ? who + (x.fb ? '👍＝拾ってくれてよかった／👎＝これはいらない／まちがいは💬へ。' : '')
                                    : u.esc(x.gen ? '生成：' + x.gen + '。' : '')) +
       '固有名詞は自動字幕なので化けることがあります。判断が要る話は時刻のリンクから元の映像で。</p>';
