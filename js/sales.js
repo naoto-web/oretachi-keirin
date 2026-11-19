@@ -172,7 +172,8 @@ var SALES = (function () {
      ・手取り＝物差しの売上×先月の手取りの割合／出勤日数＝先月の出勤日数×経過日数÷先月の日数／記事＝先月の1出勤あたりの本数×今月の出勤
      ・1出勤あたり・1記事あたり＝先月まるごとの値と比べる
      ⚠️グレード開催の多い少ないはそろえていない（先月にGが多いと今月が低めに出る） */
-  function cutDay(ym) { var p = partialDay(ym); return p ? p - 1 : 0; }
+  // 🔄11/20 Naoto「毎月、15日までの比較と1月分の比較でそれぞれやりたい」＝16日以降まで入った途中の月も15日で切る（取り込みが遅れても数字がぶれない）
+  function cutDay(ym) { var p = partialDay(ym); return !p ? 0 : p > 15 ? 15 : p - 1; }
   function paceOf(who, ym, rows, shift) {
     var pym = prevYm(ym);
     if (!pym || partialDay(ym) === 1) return null;
@@ -210,7 +211,7 @@ var SALES = (function () {
     return '<span class="' + (d > 0 ? 'dl-up' : 'dl-down') + '">' + (d > 0 ? '▲' : '▼') + txt + '</span>';
   }
   // 🔄10/16 Naoto：表記は月の途中＝先月同期比／月末までそろった月＝先月比（中身はどちらもペース比・注意書きは出さない）
-  function deltaLabel(ym) { return partialDay(ym) ? '先月同期比' : '先月比'; }
+  function deltaLabel(ym) { return !partialDay(ym) ? '先月比' : cutDay(ym) === 15 ? '先月同期比(〜15日)' : '先月同期比'; }
 
   // ── 的中（9/30 Naoto①）＝配信コンソールの予想を配信画面と同じ判定にかけた数字。8/14〜 ──
   var H = { who: 0, day: 1, slot: 2, waku: 3, note: 4, settled: 5, hit: 6, inv: 7, ref: 8, g: 9, kind: 10 };   // 10/1〜 g＝グレード開催のレース／kind＝チャレンジ・ガールズ
