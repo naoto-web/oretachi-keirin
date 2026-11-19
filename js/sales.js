@@ -173,7 +173,8 @@ var SALES = (function () {
      ・1出勤あたり・1記事あたり＝先月まるごとの値と比べる
      ⚠️グレード開催の多い少ないはそろえていない（先月にGが多いと今月が低めに出る） */
   // 🔄11/20 Naoto「毎月、15日までの比較と1月分の比較でそれぞれやりたい」＝16日以降まで入った途中の月も15日で切る（取り込みが遅れても数字がぶれない）
-  function cutDay(ym) { var p = partialDay(ym); return !p ? 0 : p > 15 ? 15 : p - 1; }
+  //   送る側（売上データ作り.py の cut15）が15日で切るので、15日までのデータは15日が丸ごと入っている＝前日に戻さない
+  function cutDay(ym) { var p = partialDay(ym); return !p ? 0 : p >= 15 ? 15 : p - 1; }
   function paceOf(who, ym, rows, shift) {
     var pym = prevYm(ym);
     if (!pym || partialDay(ym) === 1) return null;
