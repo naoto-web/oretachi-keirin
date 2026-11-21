@@ -7,7 +7,7 @@
      選手名がボタン＝押すとその選手の詳細（riders.js）。役割・ライン車数・戦法はこのレースの並びから渡す */
 var CARD = (function () {
   var u = window.OKL.u;
-  var st = { date: '', place: '', data: null, race: 0, odds: {}, oddsBusy: {}, loading: false, err: '', open: false, back: '' };
+  var st = { date: '', place: '', data: null, race: 0, odds: {}, oddsBusy: {}, loading: false, err: '', open: false, back: '', aiOpen: {} };
   var KUBUN = { '8': ['モーニング', 'kc-morning'], '1': ['デイ', 'kc-day'], '3': ['ナイター', 'kc-night'], '5': ['ミッド', 'kc-mid'] };
   // 車番の色（競輪の決まりの色）＝[地, 字]
   var CAR = { 1: ['#ffffff', '#23252a'], 2: ['#23252a', '#ffffff'], 3: ['#d62d2d', '#ffffff'], 4: ['#2553c8', '#ffffff'], 5: ['#f2d21b', '#23252a'],
@@ -45,7 +45,7 @@ var CARD = (function () {
   //   🆕10/24 opts.race＝最初に開くレース／opts.restore＝更新したあとの開き直し（app.js）
   function open(date, place, opts) {
     opts = opts || {};
-    st.date = date; st.place = place; st.data = null; st.race = +opts.race || 0; st.odds = {}; st.oddsBusy = {}; st.err = '';
+    st.date = date; st.place = place; st.data = null; st.race = +opts.race || 0; st.odds = {}; st.oddsBusy = {}; st.err = ''; st.aiOpen = {};
     st.back = opts.back || '‹ シフト';
     st.open = true;
     remember();
@@ -233,6 +233,87 @@ var CARD = (function () {
     }).join('') + '</ol><p class="fresh">発売中は動きます。人気の上位30通り（全' + o.n + '通り）。</p></div>';
   }
 
+  /* ── 🆕11/21 オッズ支持率・荒れ予報（配信者の要望「アプリからもAIアシスタントを見たい」）──
+     OBSコンソールの §180 オッズ支持率・§193 AIアシスタント（荒れ予報）と同じ計算・同じ出し方。
+     材料＝3連単の全部の組のオッズ（app=odds の all）だけ＝通信は増えない。どちらも最初はたたんで置く（開閉はレースごと・この画面の中だけ）。
+     🔴AIは買い目を出さない＝荒れやすさの見込みだけ。
+     ⚠️ARE の数字と計算は OBS の web/keirin.js（marketShares・areForecast）の写し。学習をやり直したら両方そろえる（次は2027-04-13の予定） */
+  var ARE = {
+    7: { w: [-1.391728, -0.385528, 0.756845], b: -0.95736, lo: 0.2111, hi: 0.3053, kw: [3.118462, 1.235865, -3.88467], kb: -0.62175, klo: 0.0611, khi: 0.2727, full: 210, base: 26, kbase: 19 },
+    9: { off: true }   // 9車は出さない（OBSと同じ・確かめたレースが少なく見込みが外れた帯があった）
+  };
+  function marketShares(o, groups) {
+    var keys = Object.keys(o).filter(function (k) { return /^\d{3}$/.test(k) && o[k] > 0; });
+    if (!keys.length) return null;
+    var inv = {}, sum = 0;
+    keys.forEach(function (k) { inv[k] = 1 / o[k]; sum += inv[k]; });
+    var win = {};
+    keys.forEach(function (k) { var a = +k[0]; win[a] = (win[a] || 0) + inv[k] / sum; });
+    var lines = groups.map(function (cars) {
+      var set = {}, w = 0, s = 0;
+      cars.forEach(function (c) { set[c] = true; w += win[c] || 0; });
+      if (cars.length >= 2) keys.forEach(function (k) { if (set[+k[0]] && set[+k[1]]) s += inv[k] / sum; });
+      return { cars: cars, win: w, settle: cars.length >= 2 ? s : null };
+    });
+    return { win: win, lines: lines };
+  }
+  function areForecast(o, carCount, girls) {
+    var c = ARE[carCount];
+    if (!c || c.off || girls) return null;
+    var ks = Object.keys(o).filter(function (k) { return /^\d{3}$/.test(k) && o[k] > 0; }).sort(function (a, b) { return o[a] - o[b]; });
+    if (ks.length < c.full * 0.9) return null;   // 欠車で組が減ったレース・出そろう前は出さない
+    var inv = 0, top = 0;
+    ks.forEach(function (k, i) { var v = 1 / o[k]; inv += v; if (i < 10) top += v; });
+    var x = [top / inv, (1 / o[ks[0]]) / inv, Math.log(Math.max(o[ks[0]], 1)) / 3];
+    var s = 1 / (1 + Math.exp(-(c.b + c.w[0] * x[0] + c.w[1] * x[1] + c.w[2] * x[2])));
+    var k = 1 / (1 + Math.exp(-(c.kb + c.kw[0] * x[0] + c.kw[1] * x[1] + c.kw[2] * x[2])));
+    return { pct: Math.round(s * 100), base: c.base, kpct: Math.round(k * 100), kbase: c.kbase,
+      mlv: s >= c.hi ? 'hi' : s < c.lo ? 'lo' : 'mid', klv: k >= c.khi ? 'hi' : k < c.klo ? 'lo' : 'mid', favOdds: o[ks[0]] };
+  }
+  function isGirls(r) { return /[LＬ]\s*級|ガールズ/.test(r.cls || ''); }
+  function aiFold(no, id, cap, inner) {
+    return '<details class="card rc-ai" data-ai="' + no + '|' + id + '"' + (st.aiOpen[no + '|' + id] ? ' open' : '') + '><summary>' + cap + '</summary>' + inner + '</details>';
+  }
+  function marketBox(r) {
+    var o = st.odds[r.no];
+    if (!o || o === 'err' || !o.all) return '';
+    var girls = isGirls(r);
+    var groups = !girls && r.lines && r.lines.length ? r.lines.map(function (line) { var f = []; line.forEach(function (pos) { pos.forEach(function (n) { f.push(+n); }); }); return f; }) : [];
+    var ms = marketShares(o.all, groups);
+    if (!ms) return '';
+    var pc = function (v) { return Math.round(v * 100); };
+    var cars = groups.length ? [] : r.racers.map(function (x) { return +x.no; });
+    var wv = []; (groups.length ? groups.reduce(function (a, g) { return a.concat(g); }, []) : cars).forEach(function (n) { wv.push(pc(ms.win[n] || 0)); });
+    var rkW = ranker(wv), rkL = ranker(ms.lines.map(function (l) { return pc(l.win); }));
+    var cell = function (n) { return '<span class="rc-ms-car">' + car(n, 'sm') + '<b class="num' + rkW(pc(ms.win[n] || 0)) + '">' + pc(ms.win[n] || 0) + '%</b></span>'; };
+    var inner;
+    if (groups.length) {
+      inner = '<div class="rc-ms"><div class="rc-ms-row rc-ms-legend"><span>並び・1着率（個人）</span><span>1着率<br>（ライン）</span><span>ライン<br>決着率</span></div>' +
+        ms.lines.map(function (l) {
+          return '<div class="rc-ms-row"><span class="rc-ms-cars">' + l.cars.map(cell).join('') + '</span>' +
+            '<b class="num' + rkL(pc(l.win)) + '">' + pc(l.win) + '%</b><b class="num">' + (l.settle === null ? 'ー' : pc(l.settle) + '%') + '</b></div>';
+        }).join('') + '</div>';
+    } else {
+      inner = '<div class="rc-ms"><div class="rc-ms-legend">車番・1着率（個人）' + (girls ? '' : '<small>（並びが出ていないのでラインの数字はありません）</small>') + '</div><div class="rc-ms-cars">' + cars.map(cell).join('') + '</div></div>';
+    }
+    return aiFold(r.no, 'ms', 'オッズ支持率<small>（3連単の売れ方から逆算）</small>', inner +
+      '<p class="fresh">1着率＝その車（ライン）が1着の組に集まっているお金の割合。ライン決着率＝1着・2着が同じラインの2人の組の割合。赤＝1位・青＝2位。</p>');
+  }
+  function areBox(r) {
+    var o = st.odds[r.no];
+    if (!o || o === 'err' || !o.all) return '';
+    var n = r.racers.reduce(function (m, x) { return Math.max(m, +x.no || 0); }, 0);
+    var f = areForecast(o.all, n, isGirls(r));
+    if (!f) return '';
+    var LV = { hi: '高め', mid: '普通', lo: '低め' };
+    var row = function (cls, cap, lv, pct, base) {
+      return '<div class="rc-are-row">' + cap + 'の見込み<b class="rc-are-lv' + (lv === 'hi' ? ' ' + cls : '') + '">' + LV[lv] + '</b>約' + pct + '%<small>（' + n + '車の平均は' + base + '%）</small></div>';
+    };
+    return aiFold(r.no, 'are', '🤖 AIアシスタント：荒れ予報',
+      row('k-hi', '堅い決着（10倍未満）', f.klv, f.kpct, f.kbase) + row('m-hi', '万車券（100倍以上）', f.mlv, f.pct, f.base) +
+      '<p class="fresh">1番人気の目 ' + oddsTxt(f.favOdds) + '倍・オッズが動くと変わります。7車の男子のレースだけ出ます。</p>');
+  }
+
   function body() {
     var d = st.data;
     if (!d) return '<p class="sub">' + (st.err ? 'つながりませんでした。「最新にする」を押してください。' : '読み込んでいます…') + '</p>';
@@ -244,7 +325,7 @@ var CARD = (function () {
       narabiChips(r) + '</div>' +
       '<div class="card rc-table">' + table(r) +
       (!r.lines || !r.lines.length ? '<p class="fresh">並び予想がないので車番順です' + (res ? '（発走前に並びを覚えられなかったレースです）' : '') + '。</p>' : '') + '</div>' +
-      (res ? resultBox(res) : oddsBox(r.no)) +
+      (res ? resultBox(res) : oddsBox(r.no) + marketBox(r) + areBox(r)) +
       '<p class="fresh">出走表・オッズ・結果＝keirin.jp（' + hm(d.at) + '取得）。数字の赤＝レース内1位・青＝2位（決まり手・B・H・S・勝率・3連は直近4ヶ月）。</p>';
   }
 
@@ -256,6 +337,10 @@ var CARD = (function () {
     el.querySelector('#rc-reload').addEventListener('click', function () { if (st.loading) return; st.odds = {}; load(); });
     var or = el.querySelector('#rc-odds-reload');
     if (or) or.addEventListener('click', function () { loadOdds(st.race, true); });
+    // 🆕11/21 たたんだ欄の開閉を覚える（オッズの更新で描き直しても開いたまま）
+    el.querySelectorAll('details[data-ai]').forEach(function (d) {
+      d.addEventListener('toggle', function () { st.aiOpen[d.dataset.ai] = d.open; });
+    });
     el.querySelectorAll('[data-race]').forEach(function (b) {
       b.addEventListener('click', function () { st.race = +b.dataset.race; remember(); draw(); loadOdds(st.race); });
     });
