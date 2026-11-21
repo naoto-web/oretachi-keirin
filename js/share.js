@@ -174,12 +174,25 @@ var SHARE = (function () {
         '<button type="button" class="link-btn" data-hide="' + p.id + '" data-on="' + (p.hidden ? '' : '1') + '">' + (p.hidden ? '表示に戻す' : '非表示にする') + '</button></div>' : '') + '</div>';
   }
 
+  /** 🆕11/21 終わった投稿＝お願い：相手の全員が「完了」／相談：全員が答えて期限も過ぎた */
+  function postEnded(p) {
+    if (!(p.n > 0)) return false;
+    return p.type === 'お願い' ? (p.completed || 0) >= p.n : p.answered >= p.n && !!p.overdue;
+  }
+
+  // 🔄11/21 Naoto「ずっと表示されてるの邪魔」＝新しい3件だけ出して、残りは「前の決定事項」にたたむ
+  var DEC_SHOW = 3;
   function decisionsBox(d) {
     var list = d.decisions.filter(function (x) { return st.showHidden || !x.hidden; });
-    return '<div class="card sh-dec"><h3>決定事項</h3>' + (list.length ? '<ul class="sh-declist">' + list.map(function (x) {
+    var li = function (x) {
       return '<li' + (x.hidden ? ' class="is-hidden"' : '') + '><p>' + u.esc(x.text).replace(/\n/g, '<br>') + '</p><small>' + when(x.at) + (x.postTitle ? '・「' + u.esc(x.postTitle) + '」から' : '') +
         (d.admin ? '・' + u.esc(x.by) + ' <button type="button" class="link-btn" data-hdec="' + x.id + '" data-on="' + (x.hidden ? '' : '1') + '">' + (x.hidden ? '戻す' : '非表示') + '</button> <button type="button" class="link-btn sh-del" data-del="decision" data-id="' + x.id + '">削除</button>' : '') + '</small></li>';
-    }).join('') + '</ul>' : '<p class="sub">まだありません。</p>') +
+    };
+    st.doneOpen = st.doneOpen || {};
+    var older = list.slice(DEC_SHOW), openOld = !!st.doneOpen.dec;
+    return '<div class="card sh-dec"><h3>決定事項</h3>' + (list.length ? '<ul class="sh-declist">' + list.slice(0, DEC_SHOW).map(li).join('') + '</ul>' +
+      (older.length ? '<button type="button" class="sh-donebtn" data-dopen="dec">' + (openOld ? '▾' : '▸') + ' 前の決定事項（' + older.length + '件）</button>' +
+        (openOld ? '<ul class="sh-declist">' + older.map(li).join('') + '</ul>' : '') : '') : '<p class="sub">まだありません。</p>') +
       (d.admin ? '<button type="button" class="link-btn sh-decnew" data-decide="">＋ 決定事項を直接書く</button>' : '') + '</div>';
   }
 
@@ -285,12 +298,18 @@ var SHARE = (function () {
     var posts = d.posts.filter(function (p) { return st.showHidden || !p.hidden; });
     var todo = posts.filter(function (p) { return p.target && !p.mine && !p.hidden; });
     var rest = posts.filter(function (p) { return todo.indexOf(p) < 0; });
+    // 🆕11/21 Naoto「ずっと表示されてるの邪魔」＝終わった投稿は下にたたむ（お願い＝相手の全員が完了／相談＝全員が答えて期限も過ぎた）
+    var ended = rest.filter(postEnded);
+    rest = rest.filter(function (p) { return ended.indexOf(p) < 0; });
+    st.doneOpen = st.doneOpen || {};
     el.innerHTML = head +
       (d.preview ? '<p class="fresh">プレビュー中は見るだけです（投稿・回答は管理者に戻してから）。</p>' : '') +
       turnsBox(d) +
       form(d) +
       (todo.length ? '<div class="section-cap">回答してください（' + todo.length + '）</div>' + todo.map(function (p) { return postCard(p, d); }).join('') : '') +
       '<div class="section-cap">進行中</div>' + (rest.length ? rest.map(function (p) { return postCard(p, d); }).join('') : '<p class="sub">ありません。</p>') +
+      (ended.length ? '<button type="button" class="sh-donebtn sh-endedbtn" data-dopen="posts">' + (st.doneOpen.posts ? '▾' : '▸') + ' 終わった投稿（' + ended.length + '件）</button>' +
+        (st.doneOpen.posts ? ended.map(function (p) { return postCard(p, d); }).join('') : '') : '') +
       (d.admin ? '<label class="sh-hidden-toggle"><input type="checkbox" id="sh-showhidden"' + (st.showHidden ? ' checked' : '') + '> 非表示にしたものも見る（管理者）</label>' : '') +
       contactsBox(d) + decisionsBox(d) + requestsBox(d);
     bind(el);
