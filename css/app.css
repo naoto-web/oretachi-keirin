@@ -1371,6 +1371,9 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 
 /* ── 📺 配信ダイジェスト（digest.js・11/1・管理者だけ）＝ホームのカード＋全画面の一覧・本文 ── */
 .dg-card { gap: 8px; }
+/* 11/21 ホームのタブの赤丸（数字なしの点）・カードの上の「届きました」 */
+.tab .badge.is-dot { min-width: 0; width: 9px; height: 9px; padding: 0; top: 8px; left: calc(50% + 8px); }
+.dg-new { margin: 0; font-size: 13px; color: var(--fg); background: var(--accent-soft); border-radius: 8px; padding: 6px 9px; line-height: 1.6; }
 .dg-count { color: var(--ng); }
 .dg-list { display: grid; gap: 0; padding: 0; overflow: hidden; }
 .card.dg-list { padding: 0; }
