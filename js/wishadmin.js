@@ -111,7 +111,8 @@ var WISHADMIN = (function () {
           return (u.WISH_ORDER[kind(wish[date][a])] - u.WISH_ORDER[kind(wish[date][b])]) || (order.indexOf(a) - order.indexOf(b));
         });
         return '<button type="button" class="wa-row' + (names.length ? '' : ' is-blank') + '" data-wdate="' + date + '">' +
-          '<span class="wa-date"><b class="num ' + dayClass(date) + '">' + Number(date.slice(8)) + '</b><small class="' + dayClass(date) + '">' + u.DOW[u.dow(date)] + '</small></span>' +
+          '<span class="wa-date"><b class="num ' + dayClass(date) + '">' + Number(date.slice(8)) + '</b><small class="' + dayClass(date) + '">' + u.DOW[u.dow(date)] + '</small>' +
+            (rowsBy[date] && SHIFT.gradeBadge ? SHIFT.gradeBadge(rowsBy[date].grade, rowsBy[date].grade2) : '') + '</span>' +   // 🆕11/21 グレードの札（Naoto）
           '<span class="wa-chips">' + names.map(function (n) {
             var w = wish[date][n];
             var note = ((lg.byYm[d.ym] || {}).notes || {})[date] ? lg.byYm[d.ym].notes[date][n] : '';   // 配信者のひとこと（10/1）
