@@ -803,7 +803,8 @@ button.name.is-edit:active { transform: translateY(1px); filter: brightness(.95)
 .wa-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; padding: 8px 4px; border: 0; border-bottom: 1px solid var(--line); background: none; font: inherit; color: inherit; cursor: pointer; }
 .wa-row:last-child { border-bottom: 0; }
 .wa-row:active { background: var(--accent-soft); }
-.wa-date { width: 40px; flex: none; display: flex; align-items: baseline; gap: 2px; }
+.wa-date { width: 68px; flex: none; display: flex; align-items: baseline; gap: 2px; }
+.wa-date .gb { margin: 0 0 0 2px; font-size: 10px; padding: 2px 3px; align-self: center; }
 .wa-date b { font-size: 18px; }
 .wa-date small { font-size: 11px; color: var(--fg-dim); }
 .wa-date .sun { color: var(--ng); }
