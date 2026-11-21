@@ -635,6 +635,23 @@ var SHIFT = (function () {
       (selRow ? detail(selRow, me, today) : ''));
     bind(el);
     // （全体を開いたときに今日へ自動スクロールする動きは 9/29 Naoto「デフォルトで本日にカーソルが合うようにしなくてOK」で廃止）
+    // 🔄11/21 Naoto「シフトタブを開いたときに今日の行が見えるように」で復活＝下の toToday
+    if (st.wantToday) toToday(el, all, d);
+  }
+
+  /* 🆕11/21 全体（1日1行）を開いたときだけ、今日の行が上のほうに来るまで下げる（前の日が2行見えるように）。
+     開いたとき＝シフトタブを開いた・アプリを開いた・［全体］を押した。読み直し・行の開閉では動かさない（1回で旗を下ろす）。
+     上の帯（.top）は固定なので、その高さの分ずらす。個人のカレンダー・今月以外の月では何もしない */
+  function toToday(el, all, d) {
+    st.wantToday = false;
+    if (!all || !d.today || u.ymOf(d.today) !== d.ym) return;
+    setTimeout(function () {   // app.js がタブを開いた直後に一番上へ戻すので、そのあとで動かす
+      var row = el.querySelector('.dl-row.is-today');
+      if (!row) return;
+      var bar = document.querySelector('.top'), h = row.offsetHeight || 40;
+      var y = row.getBoundingClientRect().top + window.scrollY - (bar ? bar.offsetHeight : 0) - h * 2 - 8;
+      if (y > 0) window.scrollTo(0, y);
+    }, 0);
   }
 
   function bind(el) {
@@ -654,6 +671,7 @@ var SHIFT = (function () {
       b.addEventListener('click', function () {
         st.mode = b.dataset.mode;
         st.selAll = null;  // 全体は全部閉じた状態で開く
+        st.wantToday = st.mode === 'all';   // 11/21 全体を押したら今日の行へ
         try { localStorage.setItem('gakuya:mode', st.mode); } catch (e) { /* 覚えられなくても切り替えは効く */ }
         render(el);
       });
@@ -731,6 +749,7 @@ var SHIFT = (function () {
     // 開いたら最後に見ていた月から。その月が無くなっていたら（非公開に戻った等）GASの既定の月へ
     init: function (me) {
       st.me = me;
+      st.wantToday = true;   // 11/21 アプリを開いた＝全体なら今日の行へ（データが届いて描いたときに1回）
       var last = null;
       try { last = localStorage.getItem(LS + who() + ':last'); } catch (e) { last = null; }
       if (!last) return load(null);
@@ -744,6 +763,8 @@ var SHIFT = (function () {
       if (window.WISHADMIN && WISHADMIN.isOpen && WISHADMIN.isOpen()) WISHADMIN.render();
     },
     reload: function () { return load(st.ym); },
+    // 11/21 シフトタブを開いた（app.js）＝次に描くとき、全体なら今日の行へ
+    wantToday: function () { st.wantToday = true; },
     // 最新の me（メンバー・色・並び・上限・月の一覧）が届いたら差し替えて描き直す（app.js が控えで先に開いたとき）
     setMe: function (m) { st.me = m; SHIFT.render(); },
     // 休み希望タブから使う：今のデータ・月の切り替え・日付を選んだ状態にする
@@ -751,6 +772,6 @@ var SHIFT = (function () {
     // 実績タブから使う（11/3）：この月の控え（メモリ＋端末）があればそれ＝出勤日数のために同じ月をGASへ二度聞かない
     cached: function (ym) { var c = ym ? readCache(ym) : null; return c ? c.d : null; },
     go: function (ym) { st.sel = null; st.selAll = null; return load(ym); },
-    select: function (date) { st.sel = date; st.selAll = date; }
+    select: function (date) { st.sel = date; st.selAll = date; st.wantToday = false; }   // 決まった日を見に来た＝今日へは動かさない
   };
 })();
