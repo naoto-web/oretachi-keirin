@@ -38,6 +38,7 @@ var APP = (function () {
     }).join('') + '</div>';
     if (window.SHARE) SHARE.badge();   // 作り直すと赤丸が消えるので付け直す
     if (window.WISHADMIN) WISHADMIN.badge();
+    if (window.DIGEST && DIGEST.can(me)) DIGEST.badge();   // 🆕11/21 ホームの赤丸（新しい配信ダイジェスト）
   }
 
   function render() {
@@ -52,6 +53,7 @@ var APP = (function () {
     if (t.id === 'home') {
       // 🆕11/1 配信ダイジェスト（digest.js・管理者だけ）＝いちばん上
       var pl = window.PL && PL.can(me), dg = window.DIGEST && DIGEST.can(me);
+      if (dg) DIGEST.enterHome();   // 🆕11/21 ホームを開いた＝赤丸を消し、カードの上に「◯◯のダイジェストが届きました」
       view.innerHTML = '<h1 class="screen-title">ホーム</h1>' + (dg ? DIGEST.card() : '') + (pl ? PL.card() : '') + (window.PUSH ? PUSH.homeCard() : '') + '<div class="card"><span class="pill dim" style="justify-self:start">準備中</span><p>' + t.soon + '</p></div>';
       if (dg) DIGEST.mounted();
       if (pl) PL.mounted();   // 置いてから読む（1分以内に読んだものがあればそのまま）
@@ -130,6 +132,7 @@ var APP = (function () {
     if (m.share) SHARE.init();   // 共有タブの赤丸（自分が答えていない数）
     if (WISHADMIN.can(m)) WISHADMIN.init();   // 休み希望タブの赤丸（管理者＝配信者から届いた新着）
     if (window.PUSH) PUSH.init(m);            // 🆕10/1 プッシュ通知（登録済みならお知らせを既読にしてアイコンの数字を合わせる）
+    if (window.DIGEST) DIGEST.init(m);        // 🆕11/21 ホームのタブの赤丸（ホームを開いていなくても新着を読む）
   }
   function boot() {
     KEYGATE.bind();
@@ -166,7 +169,8 @@ var APP = (function () {
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && me && (tab === 'shift' || tab === 'wish')) SHIFT.reload();
     if (document.visibilityState === 'visible' && me && window.PUSH) PUSH.refresh();   // お知らせを既読・数字を合わせる
-    if (document.visibilityState === 'visible' && me && tab === 'home' && window.DIGEST && DIGEST.can(me)) DIGEST.mounted();   // 新しいダイジェストが届いているかも（1分以内なら読まない）
+    // 新しいダイジェストが届いているかも（ホーム＝1分以内なら読まない／ほかのタブ＝赤丸のため5分以内なら読まない）
+    if (document.visibilityState === 'visible' && me && window.DIGEST && DIGEST.can(me)) DIGEST.mounted(tab === 'home' ? 60000 : 300000);
   });
 
   boot();
