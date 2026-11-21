@@ -31,15 +31,61 @@ var SHARE = (function () {
       .then(function () { if (my !== seq) return; st.loading = false; st.slow = false; draw(); badge(); });
   }
   function ago(t) { var m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'さっき' : m < 60 ? m + '分前' : Math.round(m / 60) + '時間前'; }
-  // 下のタブの赤丸＝自分が対象でまだ答えていない数
+  /* 下のタブの赤丸
+     ・数字＝相談・お願いで自分が対象でまだ答えていない数（今までどおり）
+     ・🆕11/21 数字がないとき＝点：前に共有タブを開いてから、要望・連絡のやりとりで相手から新しく書き込みが来た（Naoto）
+       共有タブを開いたら消える。「自分の番」は一番上の一覧で、片付けるまで残す
+       「最後に見た書き込みの時刻」は端末ごと（GASの inAt＝自分の番の最新の書き込み時刻）。初めての端末は自分の番があれば点 */
+  var SEEN_LS = LS + ':seen';
+  var seenAt = null;
+  try { seenAt = localStorage.getItem(SEEN_LS); } catch (e) { /* 覚えられない端末＝毎回初めて扱い */ }
+  function onShare() { return !!(window.APP && APP.current && APP.current() === 'share'); }
+  function hasNew() {
+    var d = st.data;
+    if (!d || !d.turns || !d.turns.length) return false;
+    return seenAt == null ? true : String(d.inAt || '') > seenAt;
+  }
+  function markSeen() {
+    var d = st.data;
+    if (!d || !d.inAt) return;
+    seenAt = String(d.inAt);
+    try { localStorage.setItem(SEEN_LS, seenAt); } catch (e) { /* 次も点が出るだけ */ }
+  }
   function badge() {
+    if (onShare()) markSeen();
     var n = st.data ? st.data.todo : 0;
     var t = document.querySelector('.tab[data-tab="share"]');
     if (!t) return;
     var b = t.querySelector('.badge');
-    if (!n) { if (b) b.remove(); return; }
-    if (!b) { b = document.createElement('span'); b.className = 'badge'; t.appendChild(b); }
-    b.textContent = n;
+    var dot = !n && !onShare() && hasNew();
+    if (!n && !dot) { if (b) b.remove(); return; }
+    if (!b) { b = document.createElement('span'); t.appendChild(b); }
+    b.className = 'badge' + (dot ? ' is-dot' : '');
+    b.textContent = n ? n : '';
+  }
+
+  // 🆕11/21 一番上の「自分の番」＝最後の書き込みが相手からのやりとり。押すとそのやりとりへ
+  function turnsBox(d) {
+    var list = d.turns || [];
+    if (!list.length || d.preview) return '';
+    return '<div class="card sh-turns"><div class="pr-cap">💬 返事を待っています（' + list.length + '）</div><div class="sh-turnlist">' + list.map(function (x) {
+      return '<button type="button" class="sh-turn" data-jump="' + u.esc(x.id) + '" data-key="' + (x.contact ? 'contact' : 'req') + '">' +
+        '<span class="sh-turn-head"><i class="dg-dot"></i><b>' + u.esc(x.who) + '</b>から' + u.esc(x.what) + 'が来ています<small>' + when(x.at) + '</small></span>' +
+        (x.text ? '<span class="sh-turn-text">' + u.esc(x.text) + '</span>' : '') + '</button>';
+    }).join('') + '</div>' +
+      (d.dev ? '<p class="fresh">返事を書くと一覧から消えます。返事のいらないやりとりは、そのやりとりの［返事不要］で消せます。</p>'
+        : '<p class="fresh">返事を書くか［確認した］を押すと一覧から消えます。</p>') + '</div>';
+  }
+  function jump(id, key) {
+    var go = function () {
+      var li = document.getElementById('sh-ri-' + id);
+      if (!li) return false;
+      li.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      li.classList.add('is-flash'); setTimeout(function () { li.classList.remove('is-flash'); }, 1600);
+      return true;
+    };
+    if (go()) return;
+    st.doneOpen = st.doneOpen || {}; st.doneOpen[key] = true; draw(); go();   // 完了済みの畳みの中にある
   }
 
   function send(body, okMsg) {
@@ -182,8 +228,11 @@ var SHARE = (function () {
     var head = r.contact
       ? '<span class="sh-st sh-st-dev">プログラマーから</span>' + mark + '<small>' + (d.admin || r.mineBy ? '宛先：' + u.esc(r.to) + '・' : '') + when(r.at) + '</small>'
       : '<span class="sh-st sh-st-' + d.reqStates.indexOf(r.state) + '">' + u.esc(r.state) + '</span>' + mark + '<small>' + (d.admin ? u.esc(r.who) + '・' : '') + when(r.at) + '</small>';
-    return '<li' + (r.unread ? ' class="is-unread"' : '') + '><div class="sh-reqhead">' + head + '</div>' +
-      '<p>' + u.esc(r.text).replace(/\n/g, '<br>') + '</p>' + threadHtml(r) + confirmRow(r, d) + (r.done ? '' : replyForm(r, d)) +
+    // 🆕11/21 プログラマーの画面＝［返事不要］（自分の番から外す）／押したもの＝［返事不要を戻す］
+    var noReply = d.dev && !d.preview && (r.turn || r.noReply)
+      ? '<div class="sh-row"><button type="button" class="link-btn" data-noreply="' + r.id + '" data-on="' + (r.noReply ? '' : '1') + '">' + (r.noReply ? '返事不要を戻す' : '返事不要（一覧から外す）') + '</button></div>' : '';
+    return '<li id="sh-ri-' + r.id + '"' + (r.unread ? ' class="is-unread"' : '') + '><div class="sh-reqhead">' + head + '</div>' +
+      '<p>' + u.esc(r.text).replace(/\n/g, '<br>') + '</p>' + threadHtml(r) + confirmRow(r, d) + (r.done ? '' : replyForm(r, d)) + noReply +
       (d.admin && !r.contact ? '<div class="sh-row"><span class="field-cap">状態</span><select class="date-input sh-rs" data-rid="' + r.id + '">' + d.reqStates.map(function (s) { return '<option' + (s === r.state ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>' : '') +
       // 削除＝管理者は全部／配信者は自分が出した要望だけ
       (!d.preview && (d.admin || r.mineBy) ? '<div class="sh-delrow"><button type="button" class="link-btn sh-del" data-del="request" data-id="' + r.id + '">削除</button></div>' : '') + '</li>';
@@ -238,6 +287,7 @@ var SHARE = (function () {
     var rest = posts.filter(function (p) { return todo.indexOf(p) < 0; });
     el.innerHTML = head +
       (d.preview ? '<p class="fresh">プレビュー中は見るだけです（投稿・回答は管理者に戻してから）。</p>' : '') +
+      turnsBox(d) +
       form(d) +
       (todo.length ? '<div class="section-cap">回答してください（' + todo.length + '）</div>' + todo.map(function (p) { return postCard(p, d); }).join('') : '') +
       '<div class="section-cap">進行中</div>' + (rest.length ? rest.map(function (p) { return postCard(p, d); }).join('') : '<p class="sub">ありません。</p>') +
@@ -338,6 +388,15 @@ var SHARE = (function () {
     // 完了済みの開け閉め・［確認した］／［戻す］（10/16）
     el.querySelectorAll('[data-dopen]').forEach(function (b) {
       b.addEventListener('click', function () { st.doneOpen[b.dataset.dopen] = !st.doneOpen[b.dataset.dopen]; draw(); });
+    });
+    // 🆕11/21 一番上の「自分の番」→そのやりとりへ／［返事不要］
+    el.querySelectorAll('[data-jump]').forEach(function (b) {
+      b.addEventListener('click', function () { jump(b.dataset.jump, b.dataset.key); });
+    });
+    el.querySelectorAll('[data-noreply]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        send({ op: 'reqNoReply', id: b.dataset.noreply, on: !!b.dataset.on }, b.dataset.on ? '一覧から外しました' : '一覧に戻しました');
+      });
     });
     el.querySelectorAll('[data-rconf]').forEach(function (b) {
       b.addEventListener('click', function () {
