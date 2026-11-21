@@ -162,7 +162,7 @@ var APP = (function () {
 
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-tab]');
-    if (b && me) { tab = b.dataset.tab; render(); window.scrollTo(0, 0); }
+    if (b && me) { tab = b.dataset.tab; if (tab === 'shift') SHIFT.wantToday(); render(); window.scrollTo(0, 0); }   // 11/21 シフト＝全体なら今日の行へ
   });
 
   // アプリに戻ってきたらシフトを取り直す（シートは管理者が随時直すため）
