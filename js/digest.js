@@ -26,9 +26,61 @@ var DIGEST = (function () {
       st.data = d; st.at = Date.now(); st.cached = false;
       try { localStorage.setItem(LS, JSON.stringify({ d: d, at: st.at })); } catch (e) { /* 控えられなくても表示は続ける */ }
     }, function (e) { if (my === seq) st.err = (e && e.code) || 'net'; })
-      .then(function () { if (my !== seq) return; st.loading = false; drawCard(); });
+      .then(function () {
+        if (my !== seq) return; st.loading = false;
+        // ホームにいる間に新しい回が届いた＝「届きました」に足してそのまま見たことにする／ほかのタブ＝赤丸
+        if (onHome()) {
+          var add = fresh(homeSeen);
+          homeNew = add.concat(homeNew.filter(function (x) { return add.every(function (y) { return y.id !== x.id; }); }));
+          markHome();
+        } else badge();
+        drawCard();
+      });
   }
-  function mounted() { if (!st.data || !st.at || Date.now() - st.at > 60000) load(); }
+  // wait＝読み直すまでの間（ホーム＝1分・ほかのタブで戻ってきたとき＝5分）
+  function mounted(wait) { if (!st.data || !st.at || Date.now() - st.at > (wait || 60000)) load(); }
+
+  /* ── 🆕11/21 ホームのタブの赤丸（Naoto）＝前にホームを開いてから新しいダイジェストが届いた
+     ・ホームを開いたら消える。読んだかどうかはカードの「未読◯本」で見せる（赤丸で読むことを迫らない＝共有タブの赤丸を薄めない）
+     ・「ホームで最後に見た回」は端末ごと（localStorage）＝GASは変えない。初めての端末は未読があるときだけ赤丸
+     ・ホームを開いたとき、カードのいちばん上に「11/20 昼 のダイジェストが届きました」 */
+  var HOME_LS = LS + ':home';
+  var homeSeen = null;
+  try { homeSeen = localStorage.getItem(HOME_LS); } catch (e) { /* 覚えられない端末＝毎回初めて扱い */ }
+  var homeNew = [];
+  function rk(x) { return String(x.date) + (x.slot === '夜' ? '2' : '1'); }   // 並べる鍵（文字コードだと「夜」が「昼」より前になるため）
+  function newestFirst(a, b) { return rk(a) < rk(b) ? 1 : rk(a) > rk(b) ? -1 : 0; }
+  function items() {
+    var d = st.data, m = {};
+    if (!d) return [];
+    (d.list || []).concat(d.unread || []).forEach(function (x) { m[x.id] = x; });
+    return Object.keys(m).map(function (k) { return m[k]; }).sort(newestFirst);
+  }
+  function fresh(since) {
+    if (since == null) return ((st.data && st.data.unread) || []).slice().sort(newestFirst);
+    return items().filter(function (x) { return rk(x) > since; });
+  }
+  function onHome() { return !!(window.APP && APP.current && APP.current() === 'home'); }
+  function markHome() {
+    var top = items()[0];
+    if (top) { homeSeen = rk(top); try { localStorage.setItem(HOME_LS, homeSeen); } catch (e) { /* 次も赤丸が出るだけ */ } }
+    badge();
+  }
+  function badge() {
+    var t = document.querySelector('.tab[data-tab="home"]');
+    if (!t) return;
+    var b = t.querySelector('.badge');
+    var on = !onHome() && fresh(homeSeen).length > 0;
+    if (!on) { if (b) b.remove(); return; }
+    if (!b) { b = document.createElement('span'); b.className = 'badge is-dot'; b.setAttribute('aria-label', '新しい配信ダイジェスト'); t.appendChild(b); }
+  }
+  // ホームを開いた（app.js の render から・カードを描く前に呼ぶ）
+  function enterHome() { homeNew = fresh(homeSeen); markHome(); }
+  function newLine() {
+    if (!homeNew.length) return '';
+    var shown = homeNew.slice(0, 3).map(function (x) { return '<b>' + label(x) + '</b>'; }).join('・');
+    return '<p class="dg-new">🆕 ' + shown + (homeNew.length > 3 ? ' ほか' + (homeNew.length - 3) + '本' : '') + ' のダイジェストが届きました</p>';
+  }
 
   function label(x) { return u.md(x.date) + '<span class="dg-slot ' + (x.slot === '夜' ? 'night' : 'day') + '">' + u.esc(x.slot) + '</span>'; }
   function warnPill(x) { return x.warn ? '<span class="dg-warn-pill">⚠️' + x.warn + '</span>' : ''; }
@@ -65,7 +117,7 @@ var DIGEST = (function () {
         : '<p class="sub">取れませんでした。電波のよいところでもう一度。</p><button type="button" class="btn ghost btn-sm" data-dg-reload>もう一度</button>';
     } else {
       var un = d.unread || [];
-      body = waitBlock(d) + (un.length
+      body = newLine() + waitBlock(d) + (un.length
           ? '<p class="sub">未読 <b class="dg-count">' + un.length + '本</b>' + (st.cached ? '（前回の控え）' : '') + (st.loading ? '・読み込み中…' : '') + '</p>' +
             '<div class="dg-list">' + un.slice(0, 6).map(function (x) { return row(x, true); }).join('') + '</div>' +
             (un.length > 6 ? '<p class="fresh">ほか ' + (un.length - 6) + '本は「一覧」から。</p>' : '')
@@ -356,5 +408,7 @@ var DIGEST = (function () {
     if (t.closest('[data-dg-reload]')) load(true);
   });
 
-  return { can: can, card: card, mounted: mounted, load: load };
+  // 起動時（app.js の start）＝控えで赤丸をすぐ出し、古ければ裏で読み直す
+  function init(me) { if (!can(me)) return; badge(); if (!onHome()) mounted(); }
+  return { can: can, card: card, mounted: mounted, load: load, init: init, badge: badge, enterHome: enterHome };
 })();
