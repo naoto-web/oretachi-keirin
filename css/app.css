@@ -1091,6 +1091,25 @@ html.rc-lock, html.rc-lock body { overflow: hidden; }
 .rc-rank { font-size: 12px; color: var(--fg-faint); text-align: right; }
 .rc-odds-list b { text-align: right; font-size: 16px; }
 
+/* 🆕11/21 オッズ支持率・荒れ予報（OBSコンソールのAIアシスタントと同じ中身・たたんで置く＝card.js marketBox／areBox） */
+.rc-ai summary { font-weight: 700; font-size: 14px; cursor: pointer; }
+.rc-ai summary small { font-weight: 400; font-size: 11px; color: var(--fg-dim); margin-left: 4px; }
+.rc-ai[open] summary { margin-bottom: 6px; }
+.rc-ms { display: grid; gap: 0; }
+.rc-ms-row { display: grid; grid-template-columns: minmax(0, 1fr) 54px 54px; align-items: center; gap: 6px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+.rc-ms-row > b { text-align: right; font-size: 15px; }
+.rc-ms-legend { font-size: 10px; font-weight: 700; color: var(--fg-dim); line-height: 1.2; }
+.rc-ms-legend > span + span { text-align: right; }
+.rc-ms-legend small { display: block; font-weight: 400; }
+.rc-ms-cars { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.rc-ms-car { display: inline-flex; align-items: center; gap: 3px; }
+.rc-ms-car b { font-size: 13px; min-width: 30px; }
+.rc-are-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; font-size: 13px; padding: 3px 0; }
+.rc-are-row small { color: var(--fg-dim); font-size: 11px; }
+.rc-are-lv { display: inline-block; padding: 0 9px; border-radius: 999px; background: #c9ccd3; color: #111; font-size: 13px; font-weight: 900; margin: 0 4px; white-space: nowrap; }
+.rc-are-lv.k-hi { background: #7fc4ff; }
+.rc-are-lv.m-hi { background: #ff8f6b; }
+
 /* ── 配信者の休み希望（10/1・🔄同日シフトのタブへ＝shift.js の wishBar・myWishBox） ── */
 .wish-bar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 13px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px; padding: 6px 10px; }
 .wish-bar.is-urgent { background: var(--ng-soft); border-color: var(--ng); }
