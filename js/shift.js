@@ -585,15 +585,14 @@ var SHIFT = (function () {
     var count = 0;
     if (me) rows.forEach(function (r) { if (r.day.indexOf(me) >= 0 || r.night.indexOf(me) >= 0) count++; });
     var lim = me ? limitOf(me) : null;
-    // 月の切り替えは直近だけ（2か月前〜）。古い月は出さない
-    //   11/12 要望＝11月になって9月が消えた→前の月までだったのを2か月前までに広げた
-    var curYm = u.ymOf(today);
-    var shown = months.filter(function (m) { return m.ym >= u.addMonth(curYm, -2); });
+    // 月の切り替え（11/12 要望＝前の月までだったのを2か月前までに広げた→🔄11/21 下の3か月の窓に置き換え）
     // 11/12 両脇の「‹ ›」で1か月ずつさかのぼれる（見せてよい月だけ）。
-    //   直近より古い月を開いたら、ボタンはその月を真ん中にした3か月に入れ替える
+    // 🔄11/21 Naoto「4ヶ月並んだら狭い」＝ボタンはいつも3か月だけ＝見ている月を真ん中に（端の月は端の3か月）。
+    //   「‹ ›」で月を替えると3つのボタンも一緒にずれる
     var at0 = -1;
     months.forEach(function (m, i) { if (m.ym === d.ym) at0 = i; });
-    if (!shown.some(function (m) { return m.ym === d.ym; })) shown = months.slice(Math.max(0, at0 - 1), at0 + 2);
+    var s0 = Math.max(0, Math.min((at0 < 0 ? months.length - 1 : at0) - 1, months.length - 3));
+    var shown = months.slice(s0, s0 + 3);
     var prevYm = at0 > 0 ? months[at0 - 1].ym : '';
     var nextYm = at0 >= 0 && at0 < months.length - 1 ? months[at0 + 1].ym : '';
 
