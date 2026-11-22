@@ -1471,6 +1471,7 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .fw-h { margin: 12px 0 0; font-size: 15px; border-bottom: 1px solid var(--line); padding-bottom: 3px; }
 .fw-ul, .fw-ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
 .fw-ol .btn-row { margin: 6px 0 2px; }
+.fw-guide a.btn { text-decoration: none; }
 .fw-addr, .fw-kv { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
 .fw-kv span { font-size: 12px; color: var(--fg-dim); min-width: 3em; }
 .fw-addr code, .fw-kv code { background: var(--sunk); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; font-size: 13px; overflow-wrap: anywhere; }
