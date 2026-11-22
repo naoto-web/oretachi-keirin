@@ -75,7 +75,10 @@ var API = (function () {
     publish: function (ym, on) { return post('publish', { ym: ym, on: on }); },
     // 共有タブ（share.js・10/1）。書き込みには as を付ける＝プレビュー中はGASが断る
     share: function () { return get('share'); },
-    pl: function () { return get('pl'); },   // ホームの「収支発表（投稿用）」＝文面と月の累計（pl.js・10/2）
+    pl: function () { return get('pl'); },
+    // ホームの「note購入通知の転送」（fwd.js・11/22）。書き込みには as を付ける＝プレビュー中はGASが断る
+    fwd: function () { return get('fwd'); },
+    fwdDo: function (body) { return post('fwd', Object.assign({ as: CONFIG.AS }, body)); },   // ホームの「収支発表（投稿用）」＝文面と月の累計（pl.js・10/2）
     // ホームの「配信ダイジェスト」（管理者だけ・digest.js・11/1）
     digest: function (ym) { return get('digest', { ym: ym }); },
     digestOne: function (id) { return get('digestone', { id: id }); },
