@@ -52,11 +52,13 @@ var APP = (function () {
     // ホーム＝🆕10/2 収支発表（投稿用）のカード（pl.js）＋🆕10/1 通知のカード（push.js）＋準備中の案内
     if (t.id === 'home') {
       // 🆕11/1 配信ダイジェスト（digest.js・管理者だけ）＝いちばん上
-      var pl = window.PL && PL.can(me), dg = window.DIGEST && DIGEST.can(me);
+      var pl = window.PL && PL.can(me), dg = window.DIGEST && DIGEST.can(me), fw = window.FWD && FWD.can(me);
       if (dg) DIGEST.enterHome();   // 🆕11/21 ホームを開いた＝赤丸を消し、カードの上に「◯◯のダイジェストが届きました」
-      view.innerHTML = '<h1 class="screen-title">ホーム</h1>' + (dg ? DIGEST.card() : '') + (pl ? PL.card() : '') + (window.PUSH ? PUSH.homeCard() : '') + '<div class="card"><span class="pill dim" style="justify-self:start">準備中</span><p>' + t.soon + '</p></div>';
+      // 🆕11/22 note購入通知の転送（fwd.js）＝配信者はやることなので一番上
+      view.innerHTML = '<h1 class="screen-title">ホーム</h1>' + (fw ? FWD.homeCard() : '') + (dg ? DIGEST.card() : '') + (pl ? PL.card() : '') + (window.PUSH ? PUSH.homeCard() : '') + '<div class="card"><span class="pill dim" style="justify-self:start">準備中</span><p>' + t.soon + '</p></div>';
       if (dg) DIGEST.mounted();
-      if (pl) PL.mounted();   // 置いてから読む（1分以内に読んだものがあればそのまま）
+      if (fw) FWD.mounted();
+      if (pl) PL.mounted();  // 置いてから読む（1分以内に読んだものがあればそのまま）
       return;
     }
     if (t.id === 'share') { SHARE.render(); return; }
