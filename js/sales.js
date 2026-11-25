@@ -8,7 +8,9 @@ var SALES = (function () {
   var u = window.OKL.u;
   var st = { ym: '', who: '', data: {}, shift: {}, loading: false, err: '' };
   // 列＝GASの SALES_COLS と同じ並び
-  var C = { who: 0, day: 1, slot: 2, waku: 3, place: 4, races: 5, g: 6, title: 7, n: 8, gross: 9, tip: 10, fee: 11 };
+  //   🆕11/25 mail＝1：購入通知メールから作った行（速報＝CSVで確定する前・手数料は推定）
+  var C = { who: 0, day: 1, slot: 2, waku: 3, place: 4, races: 5, g: 6, title: 7, n: 8, gross: 9, tip: 10, fee: 11, mail: 12 };
+  var TIP_ONLY = '（チップ）';   // メールのチップは、どの記事に付いたか分からない＝この名前の1行で届く
   var WAKU = { 'モ': 'モーニング', 'デ': 'デイ', 'ナ': 'ナイター', 'ミ': 'ミッド' };
   var KC = { 'モ': 'kc-morning', 'デ': 'kc-day', 'ナ': 'kc-night', 'ミ': 'kc-mid' };
   var RANK = { 'モ': 0, 'デ': 1, 'ナ': 2, 'ミ': 3 };
@@ -125,13 +127,46 @@ var SALES = (function () {
     } else { st.keepY = y; load(ym); }   // 読み込み後に元の位置へ（draw の最後）
   }
 
+  /* 🆕11/25 その月のデータが「どこまで入っているか」（購入通知メールの毎朝の反映から、人によって違う）
+       転送を始めた人＝きのうまで（その日は丸1日ぶん）／まだの人＝CSVの最後の日まで
+     ・GASが月ごとに by＝{ 名前: { asof, full, mail } } を返す（途中の人だけ。入っていない人＝月末までそろっている）
+     ・who を渡す＝その人／渡さない＝全員のうちいちばん手前の日（チーム計を比べるとき＝全員そろっている日）
+     ・by が無い月（前の送り方）＝今までどおり、いちばん新しい月の「◯日まで」を全員に使う
+     返り値＝{ asof, full } か null（月末までそろっている） */
+  function monthOf(ym) { return (st.months || []).filter(function (m) { return m.ym === ym; })[0] || null; }
+  function asofInfo(ym, who) {
+    var m = monthOf(ym);
+    if (m && m.by) {
+      if (who) return m.by[who] || null;
+      var ks = Object.keys(m.by);
+      if (!ks.length) return null;
+      var min = ks.map(function (k) { return m.by[k].asof; }).sort()[0];
+      return { asof: min, full: ks.every(function (k) { return m.by[k].asof !== min || m.by[k].full; }) ? 1 : 0 };
+    }
+    return st.asof && st.asof.slice(0, 7) === ym ? { asof: st.asof, full: 0 } : null;
+  }
+  // 見出しに出す「◯日まで」。全員の画面で人によって違うときは「11/15〜11/24」
+  function asofLabel(ym, who) {
+    var m = monthOf(ym);
+    if (!who && m && m.by) {
+      var as = Object.keys(m.by).map(function (k) { return m.by[k].asof; }).sort();
+      if (as.length && as[0] !== as[as.length - 1]) return u.mdShort(as[0]) + '〜' + u.mdShort(as[as.length - 1]);
+    }
+    var a = asofInfo(ym, who);
+    return a ? u.mdShort(a.asof) : '';
+  }
+  // その人のその月に、メールから作った行（速報）があるか
+  function hasMail(rows, who) { return rows.some(function (r) { return r[C.mail] && (!who || r[C.who] === who); }); }
+
   // 人ごとの数字。シフトがあれば出勤日＝シフト、無ければ売れた日
   // maxDay＝その日までで数える（前月比で「先月の同じ日まで」とそろえるとき・9/30）
   function stats(rows, who, shift, ym, maxDay) {
     var mine = rows.filter(function (r) { return r[C.who] === who && (!maxDay || r[C.day] <= maxDay); });
-    var s = { gross: 0, tip: 0, fee: 0, n: 0, arts: mine.length, by: { '昼': 0, '夜': 0, G: 0 }, days: {}, dayD: {}, dayN: {}, dayG: {}, basis: shift ? 'shift' : 'sold' };
+    // 記事の本数＝売れた記事（メールのチップだけの行は記事に数えない）
+    var s = { gross: 0, tip: 0, fee: 0, n: 0, arts: mine.filter(function (r) { return r[C.title] !== TIP_ONLY; }).length, mail: 0, by: { '昼': 0, '夜': 0, G: 0 }, days: {}, dayD: {}, dayN: {}, dayG: {}, basis: shift ? 'shift' : 'sold' };
     mine.forEach(function (r) {
       var v = r[C.gross] + r[C.tip];
+      if (r[C.mail]) s.mail++;
       s.gross += r[C.gross]; s.tip += r[C.tip]; s.fee += r[C.fee]; s.n += r[C.n];
       s.by[r[C.slot]] += v;
       if (r[C.g]) s.by.G += v;
@@ -143,7 +178,8 @@ var SALES = (function () {
     });
     if (shift) {
       // noteのデータが途中までの月（例：9/18まで）は、その日までの出勤だけ数える（1出勤あたりが薄まらないように）
-      var upto = st.asof && st.asof.slice(0, 7) === ym ? st.asof : '9999';
+      //   🆕11/25 「その日」は人ごと（asofInfo）
+      var ai = asofInfo(ym, who), upto = ai ? ai.asof : '9999';
       shift.rows.forEach(function (r) {
         if (r.date > upto || (maxDay && +r.date.slice(8) > maxDay)) return;
         var d = +r.date.slice(8), inD = r.day.indexOf(who) >= 0, inN = r.night.indexOf(who) >= 0;
@@ -163,7 +199,8 @@ var SALES = (function () {
   // ── 前月比（9/30 Naoto②）。途中までの月（9/18まで等）は、先月も同じ日までで比べる＝「先月同期比」 ──
   function prevYm(ym) { var ks = Object.keys(st.all || {}).sort(), i = ks.indexOf(ym); return i > 0 ? ks[i - 1] : ''; }
   // 10/6 月末までそろった月（9/30まで等）は途中の月にしない＝「先月比」
-  function partialDay(ym) { return st.asof && st.asof.slice(0, 7) === ym && +st.asof.slice(8) < u.daysIn(ym) ? +st.asof.slice(8) : 0; }
+  //   🆕11/25 who＝その人の「◯日まで」（渡さない＝全員そろっている日）
+  function partialDay(ym, who) { var a = asofInfo(ym, who); return a && a.asof.slice(0, 7) === ym && +a.asof.slice(8) < u.daysIn(ym) ? +a.asof.slice(8) : 0; }
   /* ── 先月ペース比（10/16 Naoto「先月の1日平均×今月の出勤で比べた方がよくない？」→ 月末の月も途中の月もこれだけ）──
      ・物差し＝先月まるごとの「昼1出勤あたり」×今月の昼出勤日数＋「夜1出勤あたり」×今月の夜出勤日数
        ＝今月の出勤のしかたで先月と同じペースだったら、ここまでにいくらか。前半・後半に出勤が偏っても比べられる
@@ -174,13 +211,17 @@ var SALES = (function () {
      ⚠️グレード開催の多い少ないはそろえていない（先月にGが多いと今月が低めに出る） */
   // 🔄11/20 Naoto「毎月、15日までの比較と1月分の比較でそれぞれやりたい」＝16日以降まで入った途中の月も15日で切る（取り込みが遅れても数字がぶれない）
   //   送る側（売上データ作り.py の cut15）が15日で切るので、15日までのデータは15日が丸ごと入っている＝前日に戻さない
-  function cutDay(ym) { var p = partialDay(ym); return !p ? 0 : p >= 15 ? 15 : p - 1; }
+  //   🆕11/25 メールでつながっている人＝最後の日（きのう）も丸1日ぶん入っている（full）＝前日に戻さない
+  function cutDay(ym, who) {
+    var p = partialDay(ym, who), a = asofInfo(ym, who);
+    return !p ? 0 : p >= 15 ? 15 : a && a.full ? p : p - 1;
+  }
   function paceOf(who, ym, rows, shift) {
     var pym = prevYm(ym);
-    if (!pym || partialDay(ym) === 1) return null;
+    if (!pym || !cutDay(ym, who) && partialDay(ym, who)) return null;   // 途中の月で、比べられる日が1日も無い
     var prev = stats(st.all[pym], who, st.shift[pym] || null, pym);
     if (!prev.nd || !prev.total) return null;
-    var cut = cutDay(ym);
+    var cut = cutDay(ym, who);
     var cur = stats(rows, who, shift, ym, cut || undefined);
     var all = prev.total / prev.nd;
     var rD = prev.nD ? prev.by['昼'] / prev.nD : all, rN = prev.nN ? prev.by['夜'] / prev.nN : all;
@@ -192,7 +233,7 @@ var SALES = (function () {
   // チーム計＝毎日どの枠も誰かが出ている＝出勤の偏りは無い。先月の1日あたり×今月の日数と比べる
   function teamPace(ym, rows, shift) {
     var pym = prevYm(ym);
-    if (!pym || partialDay(ym) === 1) return null;
+    if (!pym || !cutDay(ym) && partialDay(ym)) return null;
     var cut = cutDay(ym), days = cut || u.daysIn(ym), pd = u.daysIn(pym);
     var t = { total: 0, net: 0, pt: 0, pn: 0 };
     members().forEach(function (m) {
@@ -212,7 +253,7 @@ var SALES = (function () {
     return '<span class="' + (d > 0 ? 'dl-up' : 'dl-down') + '">' + (d > 0 ? '▲' : '▼') + txt + '</span>';
   }
   // 🔄10/16 Naoto：表記は月の途中＝先月同期比／月末までそろった月＝先月比（中身はどちらもペース比・注意書きは出さない）
-  function deltaLabel(ym) { return !partialDay(ym) ? '先月比' : cutDay(ym) === 15 ? '先月同期比(〜15日)' : '先月同期比'; }
+  function deltaLabel(ym, who) { return !partialDay(ym, who) ? '先月比' : cutDay(ym, who) === 15 ? '先月同期比(〜15日)' : '先月同期比'; }
 
   // ── 的中（9/30 Naoto①）＝配信コンソールの予想を配信画面と同じ判定にかけた数字。8/14〜 ──
   var H = { who: 0, day: 1, slot: 2, waku: 3, note: 4, settled: 5, hit: 6, inv: 7, ref: 8, g: 9, kind: 10 };   // 10/1〜 g＝グレード開催のレース／kind＝チャレンジ・ガールズ
@@ -246,8 +287,8 @@ var SALES = (function () {
     return '・' + m + '/' + a + '〜' + m + '/' + b + (first && a > 1 ? '（予想データは' + m + '/' + a + 'から）' : '');
   }
   // 購入者を数えた期間（例 10/1〜10/16）。途中の月は最終決済日まで・丸ごとの月は月末まで
-  function buyRange(ym) {
-    var m = +ym.slice(5), end = partialDay(ym) || u.daysIn(ym);
+  function buyRange(ym, who) {
+    var m = +ym.slice(5), end = partialDay(ym, who) || u.daysIn(ym);
     return m + '/1〜' + m + '/' + end;
   }
   function pct1(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
@@ -271,7 +312,9 @@ var SALES = (function () {
   }
   function head(d) {
     var months = (st.months || []).slice().reverse();
-    return '<div class="title-row"><h1 class="screen-title">実績</h1>' + (window.PRESENCE ? PRESENCE.seg() : '') + '<span class="title-aside">' + (st.loading ? '読み込み中…' : d && d.asof ? u.mdShort(d.asof) + 'までのnote' : d && d.nosales && d.hitsAsof ? u.mdShort(d.hitsAsof) + 'までの予想' : '') +
+    // 🆕11/25 「◯日までのnote」は人ごと（全員の画面で人によって違うときは「11/15〜11/24」）。月末までそろった月は今までどおり送ったときの日付
+    var upto = d && !d.nosales ? (asofLabel(st.ym, st.who) || (d.asof ? u.mdShort(d.asof) : '')) : '';
+    return '<div class="title-row"><h1 class="screen-title">実績</h1>' + (window.PRESENCE ? PRESENCE.seg() : '') + '<span class="title-aside">' + (st.loading ? '読み込み中…' : upto ? upto + 'までのnote' : d && d.nosales && d.hitsAsof ? u.mdShort(d.hitsAsof) + 'までの予想' : '') +
       ' <button type="button" class="link-btn" id="s-reload"' + (st.refreshing ? ' disabled' : '') + '>' + (st.refreshing ? '更新中…' : '最新にする') + '</button></span></div>' +
       // 🔄10/19 Naoto「←10月→みたいなのが見やすい」＝月は矢印で前後に。行ごと画面の上に貼り付く（下の枠を見ながら月を変えられる）
       //   どの枠も同じ月で動く（枠ごとに別の月にはしない＝同じ画面に違う月が混ざると読み違えるため）
@@ -341,7 +384,7 @@ var SALES = (function () {
             '<span class="num">' + (h ? pct1(h.rate) : '—') + '</span><span class="num">' + (h ? pct1(h.back) : '—') + '</span>' +
             '<span class="num">' + (b ? u.yen(b[2]) + '人' : '—') + '</span><span class="num">' + (b && bp ? Math.round(b[4] / bp[2] * 100) + '%' : '—') + '</span></button>';
         }).join('') + '<p class="fresh s-note">的中率・回収率＝配信コンソールの予想（8/14〜）。リピート＝先月買った人のうち今月も買った割合' +
-        (partialDay(st.ym) ? '（今月は' + u.mdShort(st.asof) + 'までなので低めに出ます）' : '') +
+        (partialDay(st.ym) ? '（今月は' + asofLabel(st.ym) + 'までなので低めに出ます）' : '') +
         '。ゲスト購入（noteにログインせずに買ったもの）は誰が買ったか分からないため、購入者数に含めていません</p></div>' : '') +
       // 全員の比較＝人ごとに1段ずつの小さなグラフ（同じ目盛り）。メンバーカラー6色は1枚に重ねると見分けにくい（赤⇔橙・黄⇔緑）ので段に分ける
       '<div class="card ch-card"><div class="ch-title">全員の比較<small>月ごとの売上（手数料の前）</small></div><div id="ch-all">' + (st.all ? '' : '<p class="sub">読み込み中…</p>') + '</div></div>';
@@ -349,6 +392,7 @@ var SALES = (function () {
 
   // ── グラフ（chart.js）。昼＝黄・夜＝藍（色の見分けは検査済み）・手数料＝灰 ──
   var DAY_C = '#c9a227', NIGHT_C = '#4f5aa8', FEE_C = '#cfcac0', G_C = '#23252a';
+  var DAY_L = '#ead9a0', NIGHT_L = '#aab1dd';   // 🆕11/25 速報の日（メールから・確定前）＝同じ色みの薄い方
   // 全部の月（グラフ用）を1回だけ読む。出勤日数のため、シートがある月のシフトも読む（まだ無い月だけ・同時に）
   //   force＝あっても読み直す（裏の最新取り・「最新にする」）。読んでいる途中なら同じ約束を返す＝二重に送らない
   function loadAll(force) {
@@ -370,34 +414,37 @@ var SALES = (function () {
   function trend(who) {
     return Object.keys(st.all).sort().map(function (ym) { return { ym: ym, s: stats(st.all[ym], who, st.shift[ym] || null, ym) }; });
   }
-  function monthTip(ym) { return u.monthLabel(ym) + (st.asof && st.asof.slice(0, 7) === ym ? '（' + u.mdShort(st.asof) + 'まで）' : ''); }
+  function monthTip(ym, who) { var a = asofInfo(ym, who); return u.monthLabel(ym) + (a ? '（' + u.mdShort(a.asof) + 'まで）' : ''); }
 
   function drawCharts(el, d) {
     var box = function (id) { return el.querySelector('#' + id); };
     if (st.who) {
       var who = st.who, mine = d.rows.filter(function (r) { return r[C.who] === who; });
-      var n = u.daysIn(st.ym), cols = [];
+      var n = u.daysIn(st.ym), cols = [], anyMail = false;
       for (var day = 1; day <= n; day++) {
         var rs = mine.filter(function (r) { return r[C.day] === day; });
-        var dv = 0, nv = 0, g = false;
-        rs.forEach(function (r) { var v = r[C.gross] + r[C.tip]; if (r[C.slot] === '昼') dv += v; else nv += v; if (r[C.g]) g = true; });
+        var dv = 0, nv = 0, g = false, ml = false;
+        rs.forEach(function (r) { var v = r[C.gross] + r[C.tip]; if (r[C.slot] === '昼') dv += v; else nv += v; if (r[C.g]) g = true; if (r[C.mail]) ml = true; });
         var date = dateOf(st.ym, day);
+        if (ml) anyMail = true;
+        // 🆕11/25 メールから作った日（速報）は薄い色
         cols.push({ tick: [1, 5, 10, 15, 20, 25, 30].indexOf(day) >= 0 ? String(day) : '', mark: g ? G_C : null,
-          segs: [{ v: dv, color: DAY_C }, { v: nv, color: NIGHT_C }],
-          tip: '<b>' + u.md(date) + '</b>' + (dv + nv ? (dv ? '<br>昼 ' + yen(dv) : '') + (nv ? '<br>夜 ' + yen(nv) : '') + (g ? '<br>グレードあり' : '') : '<br>売上なし') });
+          segs: [{ v: dv, color: ml ? DAY_L : DAY_C }, { v: nv, color: ml ? NIGHT_L : NIGHT_C }],
+          tip: '<b>' + u.md(date) + (ml ? '（速報）' : '') + '</b>' + (dv + nv ? (dv ? '<br>昼 ' + yen(dv) : '') + (nv ? '<br>夜 ' + yen(nv) : '') + (g ? '<br>グレードあり' : '') : '<br>売上なし') });
       }
-      CHART.columns(box('ch-day'), cols, { title: '日ごとの売上', legend: [{ name: '昼', color: DAY_C }, { name: '夜', color: NIGHT_C }, { name: 'グレードの記事がある日', color: G_C, dot: true }] });
+      CHART.columns(box('ch-day'), cols, { title: '日ごとの売上', legend: [{ name: '昼', color: DAY_C }, { name: '夜', color: NIGHT_C }, { name: 'グレードの記事がある日', color: G_C, dot: true }]
+        .concat(anyMail ? [{ name: '薄い色＝速報', color: NIGHT_L }] : []) });
       if (!st.all) { if (st.allErr) box('ch-mon').innerHTML = '<p class="sub">読み込めませんでした</p>'; else loadAll(); return; }
       var tr = trend(who), mc = colorOf(who);
       CHART.columns(box('ch-mon'), tr.map(function (x) {
         return { tick: u.monthLabel(x.ym), segs: [{ v: x.s.net, color: mc }, { v: x.s.fee, color: FEE_C }],
-          tip: '<b>' + monthTip(x.ym) + '</b><br>売上 ' + yen(x.s.total) + '<br>手取り ' + yen(x.s.net) + '<br>出勤 ' + x.s.nd + '日' };
+          tip: '<b>' + monthTip(x.ym, who) + '</b><br>売上 ' + yen(x.s.total) + '<br>手取り ' + yen(x.s.net) + '<br>出勤 ' + x.s.nd + '日' };
       }), { title: '月ごとの売上', legend: [{ name: '手取り', color: mc }, { name: '手数料（積むと売上）', color: FEE_C }] });
       CHART.lines(box('ch-per'), tr.map(function (x) { return u.monthLabel(x.ym); }), [
         { name: '昼', color: DAY_C, values: tr.map(function (x) { return x.s.nD ? Math.round(x.s.by['昼'] / x.s.nD) : null; }) },
         { name: '夜', color: NIGHT_C, values: tr.map(function (x) { return x.s.nN ? Math.round(x.s.by['夜'] / x.s.nN) : null; }) }
       ], { title: '1出勤あたり', tips: tr.map(function (x) {
-        return '<b>' + monthTip(x.ym) + '</b><br>昼 ' + per(x.s.by['昼'], x.s.nD) + '（' + x.s.nD + '日）<br>夜 ' + per(x.s.by['夜'], x.s.nN) + '（' + x.s.nN + '日）';
+        return '<b>' + monthTip(x.ym, who) + '</b><br>昼 ' + per(x.s.by['昼'], x.s.nD) + '（' + x.s.nD + '日）<br>夜 ' + per(x.s.by['夜'], x.s.nN) + '（' + x.s.nN + '日）';
       }) });
       return;
     }
@@ -416,12 +463,12 @@ var SALES = (function () {
       rowsBy.map(function (x, i) {
       var last = x.tr[x.tr.length - 1];
       return '<div class="sm-row"><div class="sm-head"><span class="wa-who" style="--mc:' + colorOf(x.m.name) + '">' + u.esc(x.m.name) + '</span>' +
-        '<small>' + monthTip(last.ym) + ' ' + yen(last.s.total) + '</small></div><div id="sm-' + i + '"></div></div>';
+        '<small>' + monthTip(last.ym, x.m.name) + ' ' + yen(last.s.total) + '</small></div><div id="sm-' + i + '"></div></div>';
     }).join('');
     rowsBy.forEach(function (x, i) {
       CHART.columns(all.querySelector('#sm-' + i), x.tr.map(function (t) {
         return { tick: u.monthLabel(t.ym), segs: [{ v: t.s.total, color: colorOf(x.m.name) }],
-          tip: '<b>' + u.esc(x.m.name) + ' ' + monthTip(t.ym) + '</b><br>売上 ' + yen(t.s.total) + '<br>出勤 ' + t.s.nd + '日' };
+          tip: '<b>' + u.esc(x.m.name) + ' ' + monthTip(t.ym, x.m.name) + '</b><br>売上 ' + yen(t.s.total) + '<br>出勤 ' + t.s.nd + '日' };
       }), { h: 86, max: own ? 0 : max, title: x.m.name + 'の月ごとの売上' });
     });
     all.querySelectorAll('[data-scale]').forEach(function (b) {
@@ -601,18 +648,19 @@ var SALES = (function () {
     };
     // 🔄10/16 売上まわりは先月ペース比（paceOf）。購入者は人数なので先月比のまま（月が丸ごとそろったときだけ）
     var pc = st.all ? paceOf(who, st.ym, d.rows, shift) : null, pv = pc && pc.prev, cu = pc && pc.cur;
-    var dl = function (html) { return html ? '<small class="s-dl">' + deltaLabel(st.ym) + ' ' + html + '</small>' : ''; };
+    var dl = function (html) { return html ? '<small class="s-dl">' + deltaLabel(st.ym, who) + ' ' + html + '</small>' : ''; };
     var dlb = function (html) { return html ? '<small class="s-dl">先月比 ' + html + '</small>' : ''; };
     var b = st.all ? buyerOf(who, st.ym) : null, bp = b && prevYm(st.ym) ? buyerOf(who, prevYm(st.ym)) : null;
     var firstMonth = Object.keys(st.all || {}).sort()[0] === st.ym;
     // 購入者の前月比（9/30 Naoto「新規・リピート・ヘビーも前月比」）。月単位でしか数えていないので、途中までの月は比べない。
     //   データの始まりの月（2月）と比べる月も出さない（2月は全員が新規＝比べる意味がない）
-    var bOk = b && bp && !partialDay(st.ym) && prevYm(st.ym) !== Object.keys(st.all || {}).sort()[0];
+    var bOk = b && bp && !partialDay(st.ym, who) && prevYm(st.ym) !== Object.keys(st.all || {}).sort()[0];
     var bpp = bOk && prevYm(prevYm(st.ym)) ? buyerOf(who, prevYm(prevYm(st.ym))) : null;
     var rep = b && bp ? b[4] / bp[2] * 100 : null, repPrev = bp && bpp ? bp[4] / bpp[2] * 100 : null;
     return '<div class="card s-kpi" style="--mc:' + colorOf(who) + '">' +
       '<div class="s-k"><small>売上（手数料の前）</small><b class="num">' + yen(s.total) + '</b>' + (s.tip ? '<small>うちチップ ' + yen(s.tip) + '</small>' : '') + dl(pc && delta(cu.total, pc.expTotal, 'pct')) + '</div>' +
-      '<div class="s-k"><small>手取り（手数料の後）</small><b class="num">' + yen(s.net) + '</b><small>手数料 ' + yen(s.fee) + '</small>' + dl(pc && delta(cu.net, pc.expNet, 'pct')) + '</div>' +
+      // 🆕11/25 メールには決済方法が無い＝速報の分の手数料は、直近の確定月の割合からの推定
+      '<div class="s-k"><small>手取り（手数料の後）' + (s.mail ? '<i class="sk">推定</i>' : '') + '</small><b class="num">' + yen(s.net) + '</b><small>手数料 ' + yen(s.fee) + (s.mail ? '（速報の分は推定）' : '') + '</small>' + dl(pc && delta(cu.net, pc.expNet, 'pct')) + '</div>' +
       '<div class="s-k"><small>出勤日数</small><b class="num">' + s.nd + '日</b><small>昼' + s.nD + '・夜' + s.nN + '・G' + s.nG + '</small>' + dl(pc && delta(cu.nd, Math.round(pc.expNd), 'day')) + '</div>' +
       '<div class="s-k"><small>1出勤あたり</small><b class="num">' + per(s.total, s.nd) + '</b>' + dl(pc && cu.nd && delta(cu.total / cu.nd, pv.total / pv.nd, 'pct')) + '</div>' +
       // 🔄10/1 Yの要望「1記事あたりの売上」＝売上（チップ込み）÷売れた記事の本数（0件の記事は明細に無い＝確認した範囲では出した記事とほぼ同じ）
@@ -620,9 +668,9 @@ var SALES = (function () {
       '<div class="s-k"><small>1記事あたり</small><b class="num">' + per(s.total, s.arts) + '</b><small>' + (s.arts ? (s.n / s.arts).toFixed(1) + '件/本' : '') + '</small>' + dl(pc && cu.arts && pv.arts && delta(cu.total / cu.arts, pv.total / pv.arts, 'pct')) + '</div>' + '</div>' +
       hitCards(who) +
       // 購入者数（配信者には本人分だけ）
-      (st.all ? '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">買ってくれた人<small>' + buyRange(st.ym) + '</small></div>' +
+      (st.all ? '<div class="card s-kpi s-kpi3 s-kpi2x2" style="--mc:' + colorOf(who) + '"><div class="s-k3-title">買ってくれた人<small>' + buyRange(st.ym, who) + '</small></div>' +
         // 🔄10/16 Naoto：見出しの横を期間（例 10/1〜10/16）に＝購入者の下の「◯/◯まで」はやめた
-        (b ? '<div class="s-k"><small>購入者</small><b class="num">' + u.yen(b[2]) + '人</b><small>この月に買った人</small>' + (partialDay(st.ym) ? '' : dlb(bp && delta(b[2], bp[2], 'pct'))) + '</div>' +
+        (b ? '<div class="s-k"><small>購入者</small><b class="num">' + u.yen(b[2]) + '人</b><small>この月に買った人</small>' + (partialDay(st.ym, who) ? '' : dlb(bp && delta(b[2], bp[2], 'pct'))) + '</div>' +
           '<div class="s-k"><small>新規</small><b class="num">' + (firstMonth ? '—' : u.yen(b[3]) + '人') + '</b><small>' + (firstMonth ? 'データの始まりの月' : 'はじめて買った人') + '</small>' + dlb(bOk && delta(b[3], bp[3], 'pct')) + '</div>' +
           '<div class="s-k"><small>リピート客</small><b class="num">' + (firstMonth ? '—' : u.yen(b[4]) + '人') + '</b><small>' + (bp && !firstMonth ? '先月の' + u.yen(bp[2]) + '人のうち' + Math.round(rep) + '%' : '前の月も買った人') + '</small>' +
             (bOk && repPrev != null ? '<small class="s-dl">率の先月比 ' + delta(rep, repPrev, 'pt') + '</small>' : '') + '</div>' +
@@ -645,13 +693,68 @@ var SALES = (function () {
         return '<div class="s-day"><div class="s-day-head"><b class="' + dayClass(date) + '">' + u.md(date) + '</b><span class="num">' + yen(dayTot) + '</span></div>' +
           rs.map(function (r) {
             // 札＝開催区分の色（シフトの詳細の場の札と同じ・9/30 Naoto「バッジは色分け」）。区分が分からない記事だけ昼・夜の札
+            // 🆕11/25 メールから作った行＝「速報」の札。メールのチップは記事が分からない＝「チップ」の1行
+            var sk = r[C.mail] ? ' <i class="sk">速報</i>' : '', tipOnly = r[C.title] === TIP_ONLY;
             return '<div class="s-art">' + (KC[r[C.waku]] ? '<span class="kb ' + KC[r[C.waku]] + '" title="' + WAKU[r[C.waku]] + '">' + r[C.waku] + '</span>'
               : '<span class="lg ' + (r[C.slot] === '昼' ? 'lg-day' : 'lg-night') + '">' + r[C.slot] + '</span>') +
-              '<span class="s-art-t"><b>' + u.esc(r[C.place] || '—') + (r[C.g] ? ' <i class="gb ' + (r[C.slot] === '夜' ? 'gb-night' : 'gb-day') + '">G</i>' : '') + ' <small>' + u.esc(String(r[C.races] || '')) + 'R</small></b>' +
-              '<small class="s-art-full">' + u.esc(r[C.title]) + '</small></span>' +
+              '<span class="s-art-t"><b>' + (tipOnly ? 'チップ' : u.esc(r[C.place] || '—') + (r[C.g] ? ' <i class="gb ' + (r[C.slot] === '夜' ? 'gb-night' : 'gb-day') + '">G</i>' : '') + ' <small>' + u.esc(String(r[C.races] || '')) + 'R</small>') + sk + '</b>' +
+              '<small class="s-art-full">' + (tipOnly ? 'どの記事に付いたかは、月初めの確定で分かります' : u.esc(r[C.title])) + '</small></span>' +
               '<span class="s-art-n num">' + r[C.n] + '件</span><span class="s-art-v num">' + u.yen(r[C.gross] + r[C.tip]) + (r[C.tip] ? '<small>チップ' + u.yen(r[C.tip]) + '</small>' : '') + '</span></div>';
           }).join('') + '</div>';
       }).join('') : '<p class="sub">この月の記事はありません。</p>') + '</div>';
+  }
+
+  /* ── 🆕11/25 「今日」のカード（noteの購入通知メールの速報・GASの app=salestoday）──
+     ・一番上に置く。「今日 11/25（水） 速報・14:20時点　42件　25,200円」
+     ・配信者＝本人の分だけ（転送の設定が済んでメールが届いた人にだけ出る）／管理者＝6人分とチーム計
+     ・「今日」＝注文した日が今日の分（明日のレースの前売りも今日に入る）。金額はチップ込み・チップの件数は別に小さく
+     ・時刻＝集める仕組みが最後に集め終わった時刻（10分おき）。画面は3分より古ければ取り直す
+     ・🔴人名・金額はGASが返す（このファイルに書かない） */
+  var TD_LS = 'gakuya:sales:today:' + (CONFIG.KEY || '').slice(0, 6) + ':' + (CONFIG.AS || '');
+  var TD_FRESH_MS = 3 * 60000;
+  var td = { d: null, at: 0, loading: false };
+  try { var t0 = JSON.parse(localStorage.getItem(TD_LS) || 'null'); if (t0 && t0.d) { td.d = t0.d; td.at = t0.at || 0; } } catch (e) { /* 控えが無くても読む */ }
+  function loadToday(force) {
+    if (td.loading || (!force && td.at && Date.now() - td.at < TD_FRESH_MS)) return;
+    td.loading = true;
+    API.salesToday().then(function (d) {
+      td.d = d; td.at = Date.now();
+      try { localStorage.setItem(TD_LS, JSON.stringify({ d: d, at: td.at })); } catch (e) { /* 控えなしでも続ける */ }
+    }, function () { /* 取れなくても実績の画面は出す */ }).then(function () {
+      td.loading = false;
+      var el = document.getElementById('td-card');
+      if (el) el.outerHTML = todayCard();
+    });
+  }
+  // 実績タブを開いたままでも10分おきの更新に付いていく（1分ごとに見て、3分より古ければ取り直す）
+  setInterval(function () { if (APP.current() === 'stats' && !document.hidden) loadToday(); }, 60000);
+  function todayCard() {
+    var d = td.d;
+    // きのうの控えは出さない（日付が変わったら、新しく取れるまで隠す）
+    if (!d || !d.show || d.date !== u.ymd(new Date())) return '<div id="td-card" hidden></div>';
+    var at = d.beat ? d.beat.slice(11, 16) + '時点' : '';
+    var cap = '<div class="pr-cap">今日 ' + u.md(d.date) + '<small>速報' + (at ? '・' + at : '') + '</small></div>';
+    var big = function (n, amt, label) {
+      return '<div class="td-big">' + (label ? '<small>' + label + '</small>' : '') + '<b class="num">' + u.yen(n) + '件</b><b class="num">' + yen(amt) + '</b></div>';
+    };
+    var tipLine = function (p) { return p.tipN ? 'うちチップ ' + p.tipN + '件 ' + yen(p.tipAmt) : ''; };
+    var note = '<p class="fresh">noteの購入通知メールを10分おきに数えています。注文した日で数えるので、明日のレースの前売りも今日に入ります。金額はチップ込みです。</p>';
+    if (d.scope === 'mine') {
+      var m = d.me;
+      return '<div class="card td-card" id="td-card" style="--mc:' + colorOf(m.name) + '">' + cap + big(m.n, m.amt + m.tipAmt) +
+        (m.tipN ? '<small class="td-sub">' + tipLine(m) + '</small>' : '') + note + '</div>';
+    }
+    var on = d.people.filter(function (p) { return p.on; });
+    var sum = on.reduce(function (a, p) { a.n += p.n; a.amt += p.amt + p.tipAmt; return a; }, { n: 0, amt: 0 });
+    return '<div class="card td-card" id="td-card">' + cap + big(sum.n, sum.amt, 'チーム計') +
+      '<div class="td-list">' + d.people.map(function (p) {
+        return '<div class="td-row' + (p.on ? '' : ' is-off') + '"><span class="wa-who" style="--mc:' + colorOf(p.name) + '">' + u.esc(p.name) + '</span>' +
+          (p.on ? '<span class="num">' + u.yen(p.n) + '件</span><span class="num"><b>' + yen(p.amt + p.tipAmt) + '</b>' + (p.tipN ? '<small>' + tipLine(p) + '</small>' : '') + '</span>'
+            : '<span class="td-off">転送の設定がまだ</span>') + '</div>';
+      }).join('') + '</div>' +
+      (d.stale ? '<p class="pl-warn">⚠️ 集める仕組みが止まっているかもしれません（最後に集めたのは ' + u.esc(d.beat.slice(5, 16).replace('-', '/')) + '）</p>' : '') +
+      (d.alert && d.alert.text ? '<p class="pl-warn">⚠️ ' + u.esc(d.alert.text) + '</p>' : '') +
+      '<p class="fresh">チーム計＝メールが届いている' + on.length + '人の分。' + note.replace(/^<p class="fresh">|<\/p>$/g, '') + '</p></div>';
   }
 
   // 月の矢印で、まだ読んでいない月に移ったとき＝読み終わって描いたら、押したときの位置へ戻す（10/19）
@@ -674,18 +777,20 @@ var SALES = (function () {
       bind(el); return;
     }
     if (d.nosales) {
-      el.innerHTML = head(d) + nosalesView(d);
+      el.innerHTML = head(d) + todayCard() + nosalesView(d);
       bind(el); drawSlump(el); keepScroll();
       if (!st.all && !st.allErr) loadAll();
       return;
     }
     var shift = st.shift[st.ym];
     // 注記。配信者には収支表（Yの集計）の話を出さない
-    el.innerHTML = head(d) + (st.who ? oneView(d, shift, st.who) : allView(d, shift)) +
+    el.innerHTML = head(d) + todayCard() + (st.who ? oneView(d, shift, st.who) : allView(d, shift)) +
       '<p class="fresh">月＝レースの日の月' + (st.mine ? '（月末に前売りで売れた記事は、レースの日の月に入ります）' : '（収支表は決済日の月なので、月末の前売り分だけずれます）') + '。出勤日数＝' +
       (shift ? 'シフト（実際に出た人）' : (st.mine ? 'その枠の記事が売れた日で数えています' : 'この月はシフト表が無いので、その枠の記事が売れた日')) +
-      (d.asof && d.asof.slice(0, 7) === st.ym ? '。この月はnoteのデータが' + u.mdShort(d.asof) + 'までなので、出勤もその日まで数えています' : '') +
-      '。手数料は決済方法ごとの推定' + (st.mine ? '（実際の入金と少しずれることがあります）' : '（収支表と±0.3%）') + '。</p>';
+      (asofInfo(st.ym, st.who) ? '。この月はnoteのデータが' + asofLabel(st.ym, st.who) + 'までなので、出勤もその日まで数えています' + (!st.who && asofLabel(st.ym).indexOf('〜') > 0 ? '（人によって違います）' : '') : '') +
+      '。手数料は決済方法ごとの推定' + (st.mine ? '（実際の入金と少しずれることがあります）' : '（収支表と±0.3%）') + '。' +
+      // 🆕11/25 速報の説明（メールから作った行がある月だけ）
+      (hasMail(d.rows, st.who) ? '「速報」＝noteの購入通知メールから毎朝入れている分です（グラフは薄い色）。毎月3日ごろの確定で正しい数字に置き換わります（返金・手数料はそのとき確定）。' : '') + '</p>';
     bind(el);
     drawCharts(el, d);
     drawSlump(el);
@@ -701,7 +806,7 @@ var SALES = (function () {
     if (nav && top) nav.style.top = top.getBoundingClientRect().height + 'px';
     if (who) who.addEventListener('change', function () { st.who = who.value; draw(); window.scrollTo(0, 0); });
     // 最新にする＝控えを全部捨てて読み直す（全部の月＋この月のシフト。ほかの月のシフトはシフトタブの控えがあればそれ）
-    if (rl) rl.addEventListener('click', function () { if (st.loading || st.refreshing) return; st.data = {}; st.shift = {}; st.all = null; st.allErr = false; st.snapAt = 0; load(st.ym, true); });
+    if (rl) rl.addEventListener('click', function () { if (st.loading || st.refreshing) return; loadToday(true); st.data = {}; st.shift = {}; st.all = null; st.allErr = false; st.snapAt = 0; load(st.ym, true); });
     el.querySelectorAll('[data-mt]').forEach(function (b) { b.addEventListener('click', function () { st.mtKind = b.dataset.mt; draw(); }); });
     el.querySelectorAll('[data-slv]').forEach(function (b) { b.addEventListener('click', function () {
       st.slv = b.dataset.slv;
@@ -730,6 +835,7 @@ var SALES = (function () {
     can: function (me) { return !!me; },
     // 初回＝控えがあればその場で出して裏で最新（10分以内なら取らない）・無ければ読む。2回目以降＝描くだけ（古ければ裏で最新）
     render: function () {
+      loadToday();   // 🆕11/25 「今日」のカード（3分より古ければ取り直す）
       if (!st.ym && !st.loading && !st.err) { if (readSnap()) { draw(); refresh(); } else load(''); }
       else { draw(); if (st.all && !st.loading) refresh(); }
     }
