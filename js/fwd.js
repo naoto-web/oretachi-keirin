@@ -76,8 +76,12 @@ var FWD = (function () {
       (d.addr ? '' : ' ／ <b class="fw-ng">転送先アドレス未設定</b>') + '</p>';
     var rows = d.people.map(function (p) {
       var S = STEP[p.step];
-      var btn = p.step === 'registered' || p.step === 'none'
-        ? '<button type="button" class="btn btn-xs" data-fw-op="ok" data-fw-name="' + u.esc(p.name) + '"' + (st.busy ? ' disabled' : '') + '>承認した</button>' : '';
+      // 🔧11/25 押し間違い防止：［承認した］をはっきり出すのは「登録済み・承認待ち」の人だけ。
+      //   未着手の人（本人が［登録しました］を押し忘れたまま確認メールだけ届くことがある）は、目立たないボタン＋確かめの一言
+      var btn = p.step === 'registered'
+        ? '<button type="button" class="btn btn-xs" data-fw-op="ok" data-fw-name="' + u.esc(p.name) + '"' + (st.busy ? ' disabled' : '') + '>承認した</button>'
+        : p.step === 'none'
+          ? '<button type="button" class="btn ghost btn-xs" data-fw-op="ok" data-fw-ask="1" data-fw-name="' + u.esc(p.name) + '"' + (st.busy ? ' disabled' : '') + '>承認した</button>' : '';
       var reset = p.step !== 'none' && p.step !== 'arrived'
         ? '<button type="button" class="btn ghost btn-xs" data-fw-op="reset" data-fw-name="' + u.esc(p.name) + '"' + (st.busy ? ' disabled' : '') + '>戻す</button>' : '';
       var when = p.step === 'arrived' ? '最後 ' + md(p.last) : p.step === 'approved' ? '承認 ' + md(p.ok) : p.step === 'registered' ? '登録 ' + md(p.reg) : '';
@@ -190,7 +194,10 @@ var FWD = (function () {
     var t;
     if ((t = e.target.closest('[data-fw-copy]'))) { copy(t.getAttribute('data-fw-copy')); return; }
     if ((t = e.target.closest('[data-fw-guide]'))) { guide(t.getAttribute('data-fw-guide')); return; }
-    if ((t = e.target.closest('[data-fw-op]'))) { op(t.getAttribute('data-fw-op'), t.getAttribute('data-fw-name')); return; }
+    if ((t = e.target.closest('[data-fw-op]'))) {
+      if (t.getAttribute('data-fw-ask') && !confirm(t.getAttribute('data-fw-name') + ' はまだ［登録しました］を押していません。\n確認メールのリンクを押したあとなら、承認したことにしますか？（本人に「続きをどうぞ」の通知が飛びます）')) return;
+      op(t.getAttribute('data-fw-op'), t.getAttribute('data-fw-name')); return;
+    }
     if (e.target.closest('[data-fw-reload]')) { load(true); return; }
     if ((t = e.target.closest('[data-fw-close]')) && (t.tagName === 'BUTTON' || e.target === t)) closeGuide();
   });
