@@ -739,17 +739,27 @@ var SALES = (function () {
     };
     var tipLine = function (p) { return p.tipN ? 'うちチップ ' + p.tipN + '件 ' + yen(p.tipAmt) : ''; };
     var note = '<p class="fresh">noteの購入通知メールを10分おきに数えています。注文した日で数えるので、明日のレースの前売りも今日に入ります。金額はチップ込みです。</p>';
+    // 🆕11/25 きのうの分（GASが y を付けた人だけ＝メールがきのうより前から届いている人）
+    var yLine = function (n, amt, tipN, tipAmt) {
+      return '<div class="td-y"><span>きのう ' + (d.ydate ? u.md(d.ydate) : '') + '</span><b class="num">' + u.yen(n) + '件</b><b class="num">' + yen(amt) + '</b>' +
+        (tipN ? '<small>うちチップ ' + tipN + '件 ' + yen(tipAmt) + '</small>' : '') + '</div>';
+    };
     if (d.scope === 'mine') {
       var m = d.me;
       return '<div class="card td-card" id="td-card" style="--mc:' + colorOf(m.name) + '">' + cap + big(m.n, m.amt + m.tipAmt) +
-        (m.tipN ? '<small class="td-sub">' + tipLine(m) + '</small>' : '') + note + '</div>';
+        (m.tipN ? '<small class="td-sub">' + tipLine(m) + '</small>' : '') +
+        (m.y ? yLine(m.y.n, m.y.amt + m.y.tipAmt, m.y.tipN, m.y.tipAmt) : '') + note + '</div>';
     }
     var on = d.people.filter(function (p) { return p.on; });
     var sum = on.reduce(function (a, p) { a.n += p.n; a.amt += p.amt + p.tipAmt; return a; }, { n: 0, amt: 0 });
+    var yOn = d.people.filter(function (p) { return p.y; });
+    var ySum = yOn.reduce(function (a, p) { a.n += p.y.n; a.amt += p.y.amt + p.y.tipAmt; return a; }, { n: 0, amt: 0 });
     return '<div class="card td-card" id="td-card">' + cap + big(sum.n, sum.amt, 'チーム計') +
+      (yOn.length ? yLine(ySum.n, ySum.amt) : '') +
       '<div class="td-list">' + d.people.map(function (p) {
         return '<div class="td-row' + (p.on ? '' : ' is-off') + '"><span class="wa-who" style="--mc:' + colorOf(p.name) + '">' + u.esc(p.name) + '</span>' +
-          (p.on ? '<span class="num">' + u.yen(p.n) + '件</span><span class="num"><b>' + yen(p.amt + p.tipAmt) + '</b>' + (p.tipN ? '<small>' + tipLine(p) + '</small>' : '') + '</span>'
+          (p.on ? '<span class="num">' + u.yen(p.n) + '件</span><span class="num"><b>' + yen(p.amt + p.tipAmt) + '</b>' + (p.tipN ? '<small>' + tipLine(p) + '</small>' : '') +
+            (p.y ? '<small>きのう ' + u.yen(p.y.n) + '件 ' + yen(p.y.amt + p.y.tipAmt) + '</small>' : '') + '</span>'
             : '<span class="td-off">転送の設定がまだ</span>') + '</div>';
       }).join('') + '</div>' +
       (d.stale ? '<p class="pl-warn">⚠️ 集める仕組みが止まっているかもしれません（最後に集めたのは ' + u.esc(d.beat.slice(5, 16).replace('-', '/')) + '）</p>' : '') +
