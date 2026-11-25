@@ -1501,6 +1501,9 @@ html.rdb-on, html.rdb-on body { overflow: hidden; }
 .td-big b { font-size: 26px; line-height: 1.2; }
 .td-big small { font-size: 11px; color: var(--fg-dim); width: 100%; margin-bottom: -4px; }
 .td-sub { font-size: 12px; color: var(--fg-dim); }
+.td-y { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--fg-dim); }
+.td-y b { font-size: 15px; color: var(--fg); }
+.td-y small { font-size: 11px; }
 .td-list { display: grid; }
 .td-row { display: grid; grid-template-columns: 78px 52px 1fr; gap: 6px; align-items: center; font-size: 13px; padding: 6px 0; border-top: 1px solid var(--line); }
 .td-row .wa-who { justify-self: start; font-size: 12px; }
