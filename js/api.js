@@ -68,6 +68,7 @@ var API = (function () {
     me: function () { return get('me'); },
     shift: function (ym) { return get('shift', { ym: ym }); },
     sales: function (ym) { return get('sales', { ym: ym }); },   // 実績タブ（配信者は本人分だけ・sales.js）
+    salesToday: function () { return get('salestoday'); },   // 実績タブの「今日」のカード（購入通知メールの速報・sales.js・11/25）
     presence: function (ym) { return get('presence', { ym: ym }); },   // 実績タブの出演（管理者だけ・presence.js・10/1）
     card: function (date, place) { return get('card', { date: date, place: place }); },             // 出走表（card.js）
     odds: function (date, place, race) { return get('odds', { date: date, place: place, race: race }); },  // 3連単オッズ（card.js）
